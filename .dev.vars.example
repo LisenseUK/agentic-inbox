@@ -4,3 +4,6 @@ TEAM_DOMAIN=https://your-team.cloudflareaccess.com
 
 # Optional: post a Discord notification for every received email.
 # DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...
+
+# Optional: catch-all mailbox — receives mail for any address with no dedicated mailbox.
+# CATCH_ALL_MAILBOX=catchall@lisense.uk

@@ -364,7 +364,16 @@ async function receiveEmail(event: { raw: ReadableStream; rawSize: number }, env
 	if (!mailboxId) throw new Error("received email with no valid recipient address");
 
 	const messageId = crypto.randomUUID();
-	if (!(await env.BUCKET.head(`mailboxes/${mailboxId}.json`))) { console.log(`Ignoring email for ${mailboxId}: mailbox does not exist`); return; }
+	if (!(await env.BUCKET.head(`mailboxes/${mailboxId}.json`))) {
+		const catchAll = (env.CATCH_ALL_MAILBOX || "").toLowerCase().trim();
+		if (catchAll && catchAll !== mailboxId && await env.BUCKET.head(`mailboxes/${catchAll}.json`)) {
+			console.log(`No mailbox for ${mailboxId}, routing to catch-all ${catchAll}`);
+			mailboxId = catchAll;
+		} else {
+			console.log(`Ignoring email for ${mailboxId}: mailbox does not exist and no catch-all configured`);
+			return;
+		}
+	}
 
 	const stub = env.MAILBOX.get(env.MAILBOX.idFromName(mailboxId));
 
