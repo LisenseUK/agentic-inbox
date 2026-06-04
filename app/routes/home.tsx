@@ -30,7 +30,7 @@ function UnreadBadge({ mailboxId }: { mailboxId: string }) {
 	const count = useInboxUnreadCount(mailboxId);
 	if (!count) return null;
 	return (
-		<Badge variant="info" size="sm">
+		<Badge variant="info">
 			{count > 99 ? "99+" : count}
 		</Badge>
 	);
