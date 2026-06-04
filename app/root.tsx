@@ -107,7 +107,9 @@ export function Layout({ children }: { children: React.ReactNode }) {
 						__html: `
 							if ('serviceWorker' in navigator) {
 								window.addEventListener('load', function () {
-									navigator.serviceWorker.register('/sw.js');
+									navigator.serviceWorker.register('/sw.js').catch(function (error) {
+										console.error('Service worker registration failed:', error);
+									});
 								});
 							}
 						`,
