@@ -17,6 +17,12 @@ export function useFolders(mailboxId: string | undefined) {
 	});
 }
 
+/** Returns the unread count for the inbox folder of a given mailbox. */
+export function useInboxUnreadCount(mailboxId: string | undefined) {
+	const { data: folders } = useFolders(mailboxId);
+	return folders?.find((f) => f.id === "inbox")?.unreadCount ?? 0;
+}
+
 export function useCreateFolder() {
 	const qc = useQueryClient();
 	return useMutation({

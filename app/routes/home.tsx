@@ -3,6 +3,7 @@
 //     https://opensource.org/licenses/Apache-2.0
 
 import {
+	Badge,
 	Button,
 	Dialog,
 	Empty,
@@ -22,7 +23,18 @@ import {
 	useDeleteMailbox,
 	useMailboxes,
 } from "~/queries/mailboxes";
+import { useInboxUnreadCount } from "~/queries/folders";
 import { queryKeys } from "~/queries/keys";
+
+function UnreadBadge({ mailboxId }: { mailboxId: string }) {
+	const count = useInboxUnreadCount(mailboxId);
+	if (!count) return null;
+	return (
+		<Badge variant="info" size="sm">
+			{count > 99 ? "99+" : count}
+		</Badge>
+	);
+}
 
 export function meta() {
 	return [{ title: "Agentic Inbox" }];
@@ -187,6 +199,7 @@ export default function HomeRoute() {
 										{account.email}
 									</div>
 								</div>
+								<UnreadBadge mailboxId={account.id} />
 								{!isConfigured && (
 									<Button
 										variant="ghost"
