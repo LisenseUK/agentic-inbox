@@ -412,19 +412,41 @@ async function receiveEmail(event: { raw: ReadableStream; rawSize: number }, env
 		const fromName = parsedEmail.from?.name || parsedEmail.from?.address || "Unknown";
 		const fromAddress = (parsedEmail.from?.address || "").toLowerCase();
 		const subject = parsedEmail.subject || "(no subject)";
+
+		// Build a plain-text preview — strip HTML tags, collapse whitespace, truncate
+		const rawBody = parsedEmail.text || parsedEmail.html?.replace(/<[^>]+>/g, " ") || "";
+		const preview = rawBody.replace(/\s+/g, " ").trim().slice(0, 300);
+		const description = preview ? (preview.length === 300 ? `${preview}…` : preview) : "*No message body*";
+
+		// Gravatar-style avatar for the sender (falls back gracefully if no match)
+		const emailHash = fromAddress ? [...new TextEncoder().encode(fromAddress)].map((b) => b.toString(16).padStart(2, "0")).join("") : "";
+		const authorIcon = emailHash ? `https://www.gravatar.com/avatar/${emailHash}?d=identicon&s=64` : undefined;
+
+		// Build a direct link to the mailbox inbox — uses DOMAINS env var if present
+		const domain = ((env as any).DOMAINS as string | undefined)?.split(",")[0]?.trim();
+		const inboxUrl = domain ? `https://${domain}/mailbox/${encodeURIComponent(mailboxId)}/emails/inbox` : undefined;
+
+		const fields: { name: string; value: string; inline?: boolean }[] = [];
+		if (attachmentData.length > 0) {
+			fields.push({ name: "Attachments", value: String(attachmentData.length), inline: true });
+		}
+
 		ctx.waitUntil(
 			fetch(env.DISCORD_WEBHOOK_URL, {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify({
 					embeds: [{
+						author: {
+							name: fromName !== fromAddress ? `${fromName} <${fromAddress}>` : fromAddress,
+							...(authorIcon ? { icon_url: authorIcon } : {}),
+						},
 						title: subject,
+						...(inboxUrl ? { url: inboxUrl } : {}),
+						description,
 						color: 0x5865F2, // Discord blurple
-						fields: [
-							{ name: "From", value: fromName !== fromAddress ? `${fromName} <${fromAddress}>` : fromAddress, inline: true },
-							{ name: "To", value: mailboxId, inline: true },
-						],
-						footer: { text: "agentic-inbox" },
+						...(fields.length > 0 ? { fields } : {}),
+						footer: { text: mailboxId },
 						timestamp: new Date().toISOString(),
 					}],
 				}),
