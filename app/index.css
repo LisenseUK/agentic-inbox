@@ -6,6 +6,13 @@ body {
   margin: 0;
 }
 
+/* Respect the user's browser/OS colour preference.
+   Kumo tokens use light-dark() throughout, so this single
+   declaration is all that's needed to unlock automatic dark mode. */
+:root {
+  color-scheme: light dark;
+}
+
 /* TipTap list styles */
 .ProseMirror ul {
   list-style-type: disc;

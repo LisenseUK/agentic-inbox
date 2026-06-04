@@ -77,7 +77,7 @@ const KumoLink = forwardRef<
 
 export function Layout({ children }: { children: React.ReactNode }) {
 	return (
-		<html lang="en">
+		<html lang="en" suppressHydrationWarning>
 			<head>
 				<meta charSet="UTF-8" />
 				<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
@@ -91,6 +91,15 @@ export function Layout({ children }: { children: React.ReactNode }) {
 				<title>Agentic Inbox</title>
 				<Meta />
 				<Links />
+				{/* Blocking script: sets data-mode before first paint to avoid flash */}
+				<script dangerouslySetInnerHTML={{ __html: `
+					(function(){
+						var mq=window.matchMedia('(prefers-color-scheme: dark)');
+						function apply(e){document.documentElement.setAttribute('data-mode',e.matches?'dark':'light');}
+						apply(mq);
+						mq.addEventListener('change',apply);
+					})();
+				` }} />
 			</head>
 			<body className="bg-kumo-recessed text-kumo-default antialiased">
 				{children}
