@@ -87,6 +87,8 @@ export function Layout({ children }: { children: React.ReactNode }) {
 					href="/favicon.ico"
 					sizes="48x48 32x32 16x16"
 				/>
+				<link rel="manifest" href="/manifest.webmanifest" />
+				<meta name="theme-color" content="#0f172a" />
 				<meta name="viewport" content="width=device-width, initial-scale=1.0" />
 				<title>Agentic Inbox</title>
 				<Meta />
@@ -100,6 +102,19 @@ export function Layout({ children }: { children: React.ReactNode }) {
 						mq.addEventListener('change',apply);
 					})();
 				` }} />
+				<script
+					dangerouslySetInnerHTML={{
+						__html: `
+							if ('serviceWorker' in navigator) {
+								window.addEventListener('load', function () {
+									navigator.serviceWorker.register('/sw.js').catch(function (error) {
+										console.error('Service worker registration failed:', error);
+									});
+								});
+							}
+						`,
+					}}
+				/>
 			</head>
 			<body className="bg-kumo-recessed text-kumo-default antialiased">
 				{children}
