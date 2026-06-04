@@ -366,7 +366,15 @@ async function receiveEmail(event: { raw: ReadableStream; rawSize: number }, env
 	const messageId = crypto.randomUUID();
 	if (!(await env.BUCKET.head(`mailboxes/${mailboxId}.json`))) {
 		const catchAll = (env.CATCH_ALL_MAILBOX || "").toLowerCase().trim();
-		if (catchAll && catchAll !== mailboxId && await env.BUCKET.head(`mailboxes/${catchAll}.json`)) {
+		if (catchAll && catchAll !== mailboxId) {
+			// Auto-create the catch-all mailbox on first use if it doesn't exist yet
+			if (!(await env.BUCKET.head(`mailboxes/${catchAll}.json`))) {
+				console.log(`Auto-creating catch-all mailbox ${catchAll}`);
+				const defaultSettings = { fromName: "Catch-All", forwarding: { enabled: false, email: "" }, signature: { enabled: false, text: "" }, autoReply: { enabled: false, subject: "", message: "" } };
+				await env.BUCKET.put(`mailboxes/${catchAll}.json`, JSON.stringify(defaultSettings));
+				const catchAllStub = env.MAILBOX.get(env.MAILBOX.idFromName(catchAll));
+				await catchAllStub.getFolders();
+			}
 			console.log(`No mailbox for ${mailboxId}, routing to catch-all ${catchAll}`);
 			mailboxId = catchAll;
 		} else {
