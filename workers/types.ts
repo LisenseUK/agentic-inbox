@@ -5,4 +5,6 @@
 export interface Env extends Cloudflare.Env {
 	POLICY_AUD: string;
 	TEAM_DOMAIN: string;
+	/** Optional Discord incoming webhook URL. When set, a notification is posted for every inbound email. */
+	DISCORD_WEBHOOK_URL?: string;
 }

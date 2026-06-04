@@ -407,6 +407,32 @@ async function receiveEmail(event: { raw: ReadableStream; rawSize: number }, env
 		method: "POST", headers: { "Content-Type": "application/json" },
 		body: JSON.stringify({ mailboxId, emailId: messageId, sender: (parsedEmail.from?.address || "").toLowerCase(), subject: parsedEmail.subject || "", threadId }),
 	})).catch((e) => console.error("Auto-draft trigger failed:", (e as Error).message)));
+
+	if (env.DISCORD_WEBHOOK_URL) {
+		const fromName = parsedEmail.from?.name || parsedEmail.from?.address || "Unknown";
+		const fromAddress = (parsedEmail.from?.address || "").toLowerCase();
+		const subject = parsedEmail.subject || "(no subject)";
+		ctx.waitUntil(
+			fetch(env.DISCORD_WEBHOOK_URL, {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
+					embeds: [{
+						title: subject,
+						color: 0x5865F2, // Discord blurple
+						fields: [
+							{ name: "From", value: fromName !== fromAddress ? `${fromName} <${fromAddress}>` : fromAddress, inline: true },
+							{ name: "To", value: mailboxId, inline: true },
+						],
+						footer: { text: "agentic-inbox" },
+						timestamp: new Date().toISOString(),
+					}],
+				}),
+			}).then(async (res) => {
+				if (!res.ok) console.error(`Discord webhook failed: ${res.status} ${await res.text()}`);
+			}).catch((e) => console.error("Discord webhook error:", (e as Error).message)),
+		);
+	}
 }
 
 export { app, receiveEmail };
