@@ -37,7 +37,7 @@ function UnreadBadge({ mailboxId }: { mailboxId: string }) {
 }
 
 export function meta() {
-	return [{ title: "Agentic Inbox" }];
+	return [{ title: "Lisense Mail" }];
 }
 
 export default function HomeRoute() {

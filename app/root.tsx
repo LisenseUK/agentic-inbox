@@ -90,7 +90,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
 				<link rel="manifest" href="/manifest.webmanifest" crossOrigin="use-credentials" />
 				<meta name="theme-color" content="#0f172a" />
 				<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-				<title>Agentic Inbox</title>
+				<title>Lisense Mail</title>
 				<Meta />
 				<Links />
 				{/* Blocking script: sets data-mode before first paint to avoid flash */}

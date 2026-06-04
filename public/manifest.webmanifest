@@ -1,6 +1,6 @@
 {
-	"name": "Agentic Inbox",
-	"short_name": "Inbox",
+	"name": "Lisense Mail",
+	"short_name": "Lisense Mail",
 	"description": "A self-hosted email client with an AI agent.",
 	"start_url": "/",
 	"display": "standalone",

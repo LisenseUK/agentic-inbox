@@ -4,7 +4,7 @@
 	"license": "Apache-2.0",
 	"type": "module",
 	"cloudflare": {
-		"label": "Agentic Inbox",
+		"label": "Lisense Mail",
 		"products": [
 			"Workers",
 			"Durable Objects",
