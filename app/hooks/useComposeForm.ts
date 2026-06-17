@@ -9,6 +9,7 @@ import {
 	escapeHtml,
 	formatComposeDate,
 	getSignatureBlock,
+	getReplyToAddress,
 	htmlToPlainText,
 	splitEmailList,
 	stripHtml,
@@ -76,7 +77,9 @@ function buildReplyAllFields(
 ) {
 	const toRecipients: string[] = [];
 	const toSeen = new Set<string>();
-	appendUniqueAddress(toRecipients, toSeen, original.sender, selfAddress);
+	for (const recipient of splitEmailList(getReplyToAddress(original))) {
+		appendUniqueAddress(toRecipients, toSeen, recipient, selfAddress);
+	}
 
 	for (const recipient of splitEmailList(original.recipient)) {
 		appendUniqueAddress(toRecipients, toSeen, recipient, selfAddress);
@@ -132,7 +135,7 @@ function buildInitialComposeFields(
 	if (mode === "reply") {
 		return {
 			...EMPTY_FIELDS,
-			to: original.sender,
+			to: getReplyToAddress(original),
 			subject: getPrefixedSubject(original.subject, "Re"),
 			body: `<p><br></p>${sigBlock ? `${sigBlock}<br>` : ""}${buildQuotedReplyBlock(original.date, original.sender, original.body || "")}`,
 		};

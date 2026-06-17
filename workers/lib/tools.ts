@@ -25,6 +25,7 @@ import {
 	generateMessageId,
 	buildReferencesChain,
 	buildThreadingHeaders,
+	getReplyToAddress,
 } from "./email-helpers";
 import { verifyDraft } from "./ai";
 import { sendEmail } from "../email-sender";
@@ -153,12 +154,15 @@ export async function toolDraftReply(
 	// Get the original email for thread_id and quoted text
 	const original = (await stub.getEmail(params.originalEmailId)) as EmailFull | null;
 	const threadId = original?.thread_id || params.originalEmailId;
+	const replyRecipient = original
+		? getReplyToAddress(original, params.to)
+		: params.to;
 
 	// Append quoted original message
 	const quotedBlock = original
 		? buildQuotedReplyBlock({
 				date: original.date,
-				sender: original.sender || params.to,
+				sender: original.sender || replyRecipient,
 				body: original.body ?? undefined,
 			})
 		: "";
@@ -170,7 +174,7 @@ export async function toolDraftReply(
 			id: draftId,
 			subject: params.subject,
 			sender: mailboxId.toLowerCase(),
-			recipient: params.to.toLowerCase(),
+			recipient: replyRecipient.toLowerCase(),
 			date: new Date().toISOString(),
 			body: bodyHtml,
 			in_reply_to: params.originalEmailId,
@@ -186,7 +190,7 @@ export async function toolDraftReply(
 		message: "Draft saved to Drafts folder. Review it and confirm to send.",
 		draft: {
 			originalEmailId: params.originalEmailId,
-			to: params.to,
+			to: replyRecipient,
 			subject: params.subject,
 			body: params.isPlainText ? params.body.trim() : bodyHtml,
 		},
@@ -417,6 +421,7 @@ export async function toolSendReply(
 	}
 
 	const { originalMsgId, references, threadId } = buildReferencesChain(originalEmail);
+	const replyRecipient = getReplyToAddress(originalEmail, params.to);
 	const fromDomain = mailboxId.split("@")[1];
 	if (!fromDomain) throw new Error("Invalid mailbox email address");
 	const { messageId, outgoingMessageId } = generateMessageId(fromDomain);
@@ -428,14 +433,14 @@ export async function toolSendReply(
 	}
 	const quotedBlock = buildQuotedReplyBlock({
 		date: originalEmail.date,
-		sender: originalEmail.sender || params.to,
+		sender: originalEmail.sender || replyRecipient,
 		body: originalEmail.body ?? undefined,
 	});
 	const fullBodyHtml = sanitizedBody + quotedBlock;
 
 	try {
 		await sendEmail(env.EMAIL, {
-			to: params.to,
+			to: replyRecipient,
 			from: mailboxId,
 			subject: params.subject,
 			html: fullBodyHtml,
@@ -452,7 +457,7 @@ export async function toolSendReply(
 			id: messageId,
 			subject: params.subject,
 			sender: mailboxId.toLowerCase(),
-			recipient: params.to.toLowerCase(),
+			recipient: replyRecipient.toLowerCase(),
 			date: new Date().toISOString(),
 			body: fullBodyHtml,
 			in_reply_to: originalMsgId,
@@ -464,7 +469,7 @@ export async function toolSendReply(
 		[],
 	);
 
-	return { status: "sent", messageId, message: `Reply sent to ${params.to}` };
+	return { status: "sent", messageId, message: `Reply sent to ${replyRecipient}` };
 }
 
 // ── send_email ─────────────────────────────────────────────────────

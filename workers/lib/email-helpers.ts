@@ -130,6 +130,51 @@ export function buildThreadingHeaders(
 	};
 }
 
+function getRawHeaderValue(rawHeaders: string | null | undefined, headerName: string) {
+	if (!rawHeaders) return null;
+
+	try {
+		const parsed = JSON.parse(rawHeaders);
+		const normalizedHeaderName = headerName.toLowerCase();
+
+		if (Array.isArray(parsed)) {
+			for (const header of parsed) {
+				const key = String(header?.key || header?.name || "").toLowerCase();
+				if (key === normalizedHeaderName) return String(header?.value || "");
+			}
+			return null;
+		}
+
+		if (typeof parsed === "object" && parsed !== null) {
+			for (const [key, value] of Object.entries(parsed)) {
+				if (key.toLowerCase() === normalizedHeaderName) return String(value || "");
+			}
+		}
+	} catch {
+		return null;
+	}
+
+	return null;
+}
+
+function extractEmailAddresses(value: string): string[] {
+	const matches = value.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi);
+	return matches ?? [];
+}
+
+/**
+ * Return the address replies should target, preferring the message's Reply-To
+ * header when one exists.
+ */
+export function getReplyToAddress(
+	email: Pick<EmailFull, "raw_headers" | "sender">,
+	fallback?: string,
+): string {
+	const replyTo = getRawHeaderValue(email.raw_headers, "reply-to");
+	const addresses = replyTo ? extractEmailAddresses(replyTo) : [];
+	return addresses.length > 0 ? addresses.join(", ") : email.sender || fallback || "";
+}
+
 // ── Draft-follows-in_reply_to ──────────────────────────────────────
 
 /**

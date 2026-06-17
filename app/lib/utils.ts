@@ -10,7 +10,7 @@
  */
 import DOMPurify from "dompurify";
 import { formatQuotedDate } from "shared/dates";
-import type { Attachment } from "~/types";
+import type { Attachment, Email } from "~/types";
 
 export {
 	formatListDate,
@@ -49,6 +49,48 @@ export function splitEmailList(value?: string | null): string[] {
 export function toEmailListValue(addresses: string[]): string | string[] | undefined {
 	if (addresses.length === 0) return undefined;
 	return addresses.length === 1 ? addresses[0] : addresses;
+}
+
+function getRawHeaderValue(rawHeaders: string | null | undefined, headerName: string) {
+	if (!rawHeaders) return null;
+
+	try {
+		const parsed = JSON.parse(rawHeaders);
+		const normalizedHeaderName = headerName.toLowerCase();
+
+		if (Array.isArray(parsed)) {
+			for (const header of parsed) {
+				const key = String(header?.key || header?.name || "").toLowerCase();
+				if (key === normalizedHeaderName) return String(header?.value || "");
+			}
+			return null;
+		}
+
+		if (typeof parsed === "object" && parsed !== null) {
+			for (const [key, value] of Object.entries(parsed)) {
+				if (key.toLowerCase() === normalizedHeaderName) return String(value || "");
+			}
+		}
+	} catch {
+		return null;
+	}
+
+	return null;
+}
+
+function extractEmailAddresses(value: string): string[] {
+	const matches = value.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi);
+	return matches ?? [];
+}
+
+/**
+ * Return the address replies should target, preferring the message's Reply-To
+ * header when one exists.
+ */
+export function getReplyToAddress(email: Email): string {
+	const replyTo = getRawHeaderValue(email.raw_headers, "reply-to");
+	const addresses = replyTo ? extractEmailAddresses(replyTo) : [];
+	return addresses.length > 0 ? addresses.join(", ") : email.sender;
 }
 
 /**
