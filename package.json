@@ -27,7 +27,8 @@
 		"test:mcp-tools": "node --import tsx --test tests/mcp-tools-integration.test.ts",
 		"test:multi-domain": "node --import tsx --test tests/multi-domain-integration.test.ts",
 		"test:blocked-inboxes": "node --import tsx --test tests/blocked-mailboxes-integration.test.ts",
-		"test:mcp-events": "node --import tsx --test tests/mcp-events.test.ts tests/mcp-events-integration.test.ts"
+		"test:mcp-events": "node --import tsx --test tests/mcp-events.test.ts tests/mcp-events-integration.test.ts",
+		"test:mcp-compat": "node --import tsx --test tests/mcp-compatibility.test.ts"
 	},
 	"dependencies": {
 		"@cfworker/json-schema": "^4.1.1",

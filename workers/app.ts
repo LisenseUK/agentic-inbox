@@ -88,16 +88,18 @@ app.use("*", async (c, next) => {
 });
 
 // MCP server endpoint — used by AI coding tools (ProtoAgent, Claude Code, Cursor, etc.)
-// Must be before API routes and React Router catch-all
+// Must be before API routes and React Router catch-all.
+// isLegacyRequest takes parsedBody second and options third; leave parsedBody
+// undefined so the SDK classifies a clone of the actual request body.
 const mcpHandler = EmailMCP.serve("/mcp", { binding: "EMAIL_MCP" });
 app.all("/mcp", async (c) => {
-	if (!await isLegacyRequest(c.req.raw, { maxRequestBodySize: 1024 * 1024 })) {
+	if (!await isLegacyRequest(c.req.raw, undefined, { maxRequestBodySize: 1024 * 1024 })) {
 		return handleModernMcp(c.req.raw, c.env, c.get("eventPrincipal"));
 	}
 	return mcpHandler.fetch(c.req.raw, c.env, c.executionCtx as ExecutionContext);
 });
 app.all("/mcp/*", async (c) => {
-	if (!await isLegacyRequest(c.req.raw, { maxRequestBodySize: 1024 * 1024 })) {
+	if (!await isLegacyRequest(c.req.raw, undefined, { maxRequestBodySize: 1024 * 1024 })) {
 		return handleModernMcp(c.req.raw, c.env, c.get("eventPrincipal"));
 	}
 	return mcpHandler.fetch(c.req.raw, c.env, c.executionCtx as ExecutionContext);
