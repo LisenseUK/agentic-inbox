@@ -16,16 +16,12 @@ interface EmailListResponse {
 
 // ---------- Queries ----------
 
-export function useEmails(
-	mailboxId: string | undefined,
-	params: Record<string, string>,
-	options?: { enabled?: boolean; refetchInterval?: number },
-) {
+export function emailListOptions(mailboxId: string, params: Record<string, string>) {
 	const queryParams = params.folder
 		? { ...params, threaded: "true" }
 		: params;
 
-	return useQuery<EmailListResponse>({
+	return {
 		queryKey: mailboxId
 			? queryKeys.emails.list(mailboxId, queryParams)
 			: ["emails", "_disabled"],
@@ -42,6 +38,16 @@ export function useEmails(
 			const arr = Array.isArray(data) ? data : [];
 			return { emails: arr, totalCount: arr.length };
 		},
+	};
+}
+
+export function useEmails(
+	mailboxId: string | undefined,
+	params: Record<string, string>,
+	options?: { enabled?: boolean; refetchInterval?: number },
+) {
+	return useQuery<EmailListResponse>({
+		...emailListOptions(mailboxId ?? "", params),
 		enabled: !!mailboxId && (options?.enabled ?? true),
 		refetchInterval: options?.refetchInterval,
 	});

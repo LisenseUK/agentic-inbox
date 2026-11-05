@@ -13,7 +13,7 @@ import {
 	Text,
 	useKumoToastManager,
 } from "@cloudflare/kumo";
-import { EnvelopeIcon, PlusIcon, TrashIcon } from "@phosphor-icons/react";
+import { EnvelopeIcon, PlusIcon, TrashIcon, ProhibitIcon } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
 import { type FormEvent, useEffect, useRef, useState } from "react";
 import { Link as RouterLink } from "react-router";
@@ -22,6 +22,7 @@ import {
 	useCreateMailbox,
 	useDeleteMailbox,
 	useMailboxes,
+	useBlockMailbox,
 } from "~/queries/mailboxes";
 import { useInboxUnreadCount } from "~/queries/folders";
 import { queryKeys } from "~/queries/keys";
@@ -30,7 +31,7 @@ function UnreadBadge({ mailboxId }: { mailboxId: string }) {
 	const count = useInboxUnreadCount(mailboxId);
 	if (!count) return null;
 	return (
-		<Badge variant="info">
+		<Badge variant="primary">
 			{count > 99 ? "99+" : count}
 		</Badge>
 	);
@@ -45,6 +46,7 @@ export default function HomeRoute() {
 	const { data: mailboxes = [], refetch: refetchMailboxes, isFetched: mailboxesFetched } = useMailboxes();
 	const createMailbox = useCreateMailbox();
 	const deleteMailbox = useDeleteMailbox();
+	const blockMailbox = useBlockMailbox();
 
 	const { data: configData } = useQuery({
 		queryKey: queryKeys.config,
@@ -172,6 +174,7 @@ export default function HomeRoute() {
 							{domains.join(", ")}
 						</p>
 					)}
+					<RouterLink prefetch="intent" to="/settings/blocked-inboxes" className="mt-3 inline-block text-sm text-kumo-subtle hover:text-kumo-default">Manage blocked inboxes</RouterLink>
 				</div>
 
 				{isLoading ? (
@@ -182,8 +185,9 @@ export default function HomeRoute() {
 					<div className="rounded-xl border border-kumo-line bg-kumo-base overflow-hidden">
 						{accounts.map((account, idx) => (
 							<RouterLink
+								prefetch="intent"
 								key={account.id}
-								to={`/mailbox/${account.id}`}
+								to={`/mailbox/${account.id}/emails/inbox`}
 								className={`group flex items-center gap-4 px-5 py-4 no-underline transition-colors hover:bg-kumo-tint ${
 									idx > 0 ? "border-t border-kumo-line" : ""
 								}`}
@@ -200,6 +204,16 @@ export default function HomeRoute() {
 									</div>
 								</div>
 								<UnreadBadge mailboxId={account.id} />
+								<Button
+									variant="ghost" size="sm" shape="square" icon={<ProhibitIcon size={16} />}
+									aria-label={`Block inbox ${account.email}`}
+									loading={blockMailbox.isPending && blockMailbox.variables === account.email}
+									onClick={async (event) => {
+										event.preventDefault(); event.stopPropagation();
+										try { await blockMailbox.mutateAsync(account.email); toastManager.add({ title: "Inbox blocked" }); }
+										catch { toastManager.add({ title: "Could not block inbox", variant: "error" }); }
+									}}
+								/>
 								{!isConfigured && (
 									<Button
 										variant="ghost"

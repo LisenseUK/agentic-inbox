@@ -5,8 +5,8 @@
 import { Badge, Button, Input, Loader, useKumoToastManager } from "@cloudflare/kumo";
 import { RobotIcon, ArrowCounterClockwiseIcon } from "@phosphor-icons/react";
 import { useEffect, useState } from "react";
-import { useParams } from "react-router";
-import { useMailbox, useUpdateMailbox } from "~/queries/mailboxes";
+import { Link, useNavigate, useParams } from "react-router";
+import { useMailbox, useUpdateMailbox, useBlockMailbox } from "~/queries/mailboxes";
 
 // Placeholder shown in the textarea when no custom prompt is set.
 // The authoritative default prompt lives in workers/agent/index.ts (DEFAULT_SYSTEM_PROMPT).
@@ -17,14 +17,18 @@ export default function SettingsRoute() {
 	const toastManager = useKumoToastManager();
 	const { data: mailbox } = useMailbox(mailboxId);
 	const updateMailboxMutation = useUpdateMailbox();
+	const blockMailbox = useBlockMailbox();
+	const navigate = useNavigate();
 
 	const [displayName, setDisplayName] = useState("");
+	const [autoReplyDrafting, setAutoReplyDrafting] = useState(true);
 	const [agentPrompt, setAgentPrompt] = useState("");
 	const [isSaving, setIsSaving] = useState(false);
 
 	useEffect(() => {
 		if (mailbox) {
 			setDisplayName(mailbox.settings?.fromName || mailbox.name || "");
+			setAutoReplyDrafting(mailbox.settings?.autoReplyDrafting !== false);
 			setAgentPrompt(mailbox.settings?.agentSystemPrompt || "");
 		}
 	}, [mailbox]);
@@ -35,6 +39,7 @@ export default function SettingsRoute() {
 		const settings = {
 			...mailbox.settings,
 			fromName: displayName,
+			autoReplyDrafting,
 			agentSystemPrompt: agentPrompt.trim() || undefined,
 		};
 		try {
@@ -84,6 +89,16 @@ export default function SettingsRoute() {
 					</div>
 				</div>
 
+				<div className="rounded-lg border border-kumo-line bg-kumo-base p-5">
+					<label className="flex items-center gap-3 text-sm font-medium text-kumo-default">
+						<input type="checkbox" checked={autoReplyDrafting} onChange={(e) => setAutoReplyDrafting(e.target.checked)} />
+						Automatically draft replies
+					</label>
+					<p className="text-xs text-kumo-subtle mt-2">
+						Create a draft reply when new email arrives. You can still request drafts manually when this is off.
+					</p>
+				</div>
+
 				{/* Agent System Prompt */}
 				<div className="rounded-lg border border-kumo-line bg-kumo-base p-5">
 					<div className="flex items-center justify-between mb-4">
@@ -127,6 +142,17 @@ export default function SettingsRoute() {
 				</div>
 
 				{/* Save */}
+				<div className="rounded-lg border border-kumo-line bg-kumo-base p-5">
+					<h2 className="text-sm font-medium text-kumo-default">Block this inbox</h2>
+					<p className="mt-2 mb-4 text-sm text-kumo-subtle">Hide this inbox and stop new mail, notifications, and automatic drafts. Existing mail and settings will be kept.</p>
+					<div className="flex flex-wrap items-center gap-4">
+						<Button variant="destructive" loading={blockMailbox.isPending} onClick={async () => {
+							try { await blockMailbox.mutateAsync(mailbox.email); navigate("/"); toastManager.add({ title: "Inbox blocked" }); }
+							catch { toastManager.add({ title: "Could not block inbox", variant: "error" }); }
+						}}>Block inbox</Button>
+						<Link prefetch="intent" to="/settings/blocked-inboxes" className="text-sm text-kumo-subtle hover:text-kumo-default">Manage blocked inboxes</Link>
+					</div>
+				</div>
 				<div className="flex justify-end">
 					<Button variant="primary" onClick={handleSave} loading={isSaving}>
 						Save Changes

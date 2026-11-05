@@ -2,6 +2,7 @@
 // Licensed under the Apache 2.0 license found in the LICENSE file or at:
 //     https://opensource.org/licenses/Apache-2.0
 
+import { persist } from "zustand/middleware";
 import { create } from "zustand";
 import type { Email } from "~/types";
 
@@ -43,7 +44,7 @@ interface UIState {
 	closeComposeModal: () => void;
 }
 
-export const useUIStore = create<UIState>((set, get) => ({
+export const useUIStore = create<UIState>()(persist((set, get) => ({
 	selectedEmailId: null,
 	isComposing: false,
 	_previousEmailId: null,
@@ -95,4 +96,8 @@ export const useUIStore = create<UIState>((set, get) => ({
 			isComposeModalOpen: false,
 			composeOptions: { mode: "new", originalEmail: null },
 		}),
+}), {
+	name: "lisense-mail-layout",
+	partialize: (state) => ({ isAgentPanelOpen: state.isAgentPanelOpen }),
+	skipHydration: true,
 }));

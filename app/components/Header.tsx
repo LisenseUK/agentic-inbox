@@ -5,7 +5,7 @@
 import { Button, Input, Tooltip } from "@cloudflare/kumo";
 import { GearSixIcon, ListIcon, MagnifyingGlassIcon, RobotIcon, XIcon } from "@phosphor-icons/react";
 import { type KeyboardEvent, useEffect, useState } from "react";
-import { useLocation, useNavigate, useParams, useSearchParams } from "react-router";
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from "react-router";
 import { useUIStore } from "~/hooks/useUIStore";
 
 export default function Header() {
@@ -122,27 +122,26 @@ export default function Header() {
 				<Tooltip content={isAgentPanelOpen ? "Hide agent panel" : "Show agent panel"} side="bottom" asChild>
 					<Button
 						variant={isAgentPanelOpen ? "secondary" : "ghost"}
-						shape="square"
 						icon={<RobotIcon size={20} />}
 						onClick={toggleAgentPanel}
-						aria-label="Toggle agent panel"
+						aria-label={isAgentPanelOpen ? "Hide Agent & MCP" : "Show Agent & MCP"}
+						aria-expanded={isAgentPanelOpen}
+						aria-controls="agent-sidebar"
 						className="hidden lg:inline-flex"
-					/>
+					>
+						Agent &amp; MCP
+					</Button>
 				</Tooltip>
 				<Tooltip content="Settings" side="bottom" asChild>
-					<Button
-						variant={isSettingsActive ? "secondary" : "ghost"}
-						shape="square"
-						icon={<GearSixIcon size={20} />}
-						onClick={() =>
-							navigate(
-								isSettingsActive
-									? `/mailbox/${mailboxId}/emails/inbox`
-									: `/mailbox/${mailboxId}/settings`,
-							)
-						}
+					<Link
+						prefetch="intent"
+						to={isSettingsActive ? `/mailbox/${mailboxId}/emails/inbox` : `/mailbox/${mailboxId}/settings`}
+						className={`flex h-9 w-9 items-center justify-center rounded-md hover:bg-kumo-tint ${isSettingsActive ? "bg-kumo-fill" : ""}`}
 						aria-label="Settings"
-					/>
+						aria-current={isSettingsActive ? "page" : undefined}
+					>
+						<GearSixIcon size={20} />
+					</Link>
 				</Tooltip>
 			</div>
 		</header>

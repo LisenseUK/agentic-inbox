@@ -3,7 +3,7 @@
 //     https://opensource.org/licenses/Apache-2.0
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import api from "~/services/api";
+import api, { ApiError } from "~/services/api";
 import type { Mailbox } from "~/types";
 import { queryKeys } from "./keys";
 
@@ -21,7 +21,36 @@ export function useMailbox(mailboxId: string | undefined) {
 			: ["mailboxes", "_disabled"],
 		queryFn: () => api.getMailbox(mailboxId!) as Promise<Mailbox>,
 		enabled: !!mailboxId,
+		retry: (count, error) => !(error instanceof ApiError && error.status === 404) && count < 3,
 	});
+}
+
+export function useBlockedMailboxes() {
+	return useQuery({ queryKey: queryKeys.blockedMailboxes, queryFn: api.listBlockedMailboxes });
+}
+
+function useRefreshMailboxAccess() {
+	const qc = useQueryClient();
+	return async (mailboxId: string) => {
+		const predicate = (query: { queryKey: readonly unknown[] }) => query.queryKey.includes(mailboxId);
+		await qc.cancelQueries({ predicate });
+		qc.removeQueries({ predicate });
+		await Promise.all([
+			qc.invalidateQueries({ queryKey: queryKeys.mailboxes.all }),
+			qc.invalidateQueries({ queryKey: queryKeys.blockedMailboxes }),
+			qc.invalidateQueries({ queryKey: queryKeys.config }),
+		]);
+	};
+}
+
+export function useBlockMailbox() {
+	const refresh = useRefreshMailboxAccess();
+	return useMutation({ mutationFn: api.blockMailbox, onSuccess: (_data, email) => refresh(email) });
+}
+
+export function useUnblockMailbox() {
+	const refresh = useRefreshMailboxAccess();
+	return useMutation({ mutationFn: api.unblockMailbox, onSuccess: (_data, email) => refresh(email) });
 }
 
 export function useCreateMailbox() {

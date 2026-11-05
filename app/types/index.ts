@@ -9,6 +9,7 @@ export interface SignatureSettings {
 }
 
 export interface MailboxSettings {
+	autoReplyDrafting?: boolean;
 	fromName?: string;
 	forwarding?: { enabled: boolean; email: string };
 	signature?: SignatureSettings;
@@ -21,6 +22,12 @@ export interface Mailbox {
 	email: string;
 	name: string;
 	settings?: MailboxSettings;
+}
+
+export interface BlockedMailbox {
+	id: string;
+	email: string;
+	blockedAt: string;
 }
 
 export interface Email {

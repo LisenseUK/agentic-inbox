@@ -47,11 +47,22 @@ function CopyButton({ text }: { text: string }) {
 
 const TOOLS = [
 	{ name: "list_mailboxes", desc: "List all mailboxes" },
+	{ name: "create_mailbox", desc: "Create an inbox" },
+	{ name: "delete_mailbox", desc: "Remove an inbox" },
 	{ name: "list_emails", desc: "List emails in a folder" },
 	{ name: "get_email", desc: "Read a full email with body" },
 	{ name: "get_thread", desc: "Load a conversation thread" },
-	{ name: "search_emails", desc: "Search emails by query" },
+	{ name: "search_emails", desc: "Search emails with filters and pagination" },
+	{ name: "get_attachment", desc: "Download an attachment" },
+	{ name: "list_folders", desc: "List folders and unread counts" },
+	{ name: "create_folder", desc: "Create a custom folder" },
+	{ name: "forward_email", desc: "Forward an email and its attachments" },
+	{ name: "mark_thread_read", desc: "Mark a conversation as read" },
+	{ name: "star_email", desc: "Star or unstar an email" },
 	{ name: "draft_reply", desc: "Draft a reply to an email" },
+	{ name: "create_draft", desc: "Create a draft email" },
+	{ name: "update_draft", desc: "Update a draft email" },
+	{ name: "delete_email", desc: "Permanently delete an email" },
 	{ name: "send_reply", desc: "Send a reply" },
 	{ name: "send_email", desc: "Send a new email" },
 	{ name: "mark_email_read", desc: "Mark email as read/unread" },
@@ -107,6 +118,23 @@ export default function MCPPanel() {
 						<div className="bg-kumo-recessed text-kumo-default font-mono text-[11px] px-3 py-2.5 pr-10 rounded-lg border border-kumo-line break-all leading-relaxed">
 							{mcpUrl}
 						</div>
+					</div>
+				</div>
+
+				<div className="space-y-2">
+					<h4 className="text-xs uppercase tracking-wider font-semibold text-kumo-subtle px-0.5">
+						Events
+					</h4>
+					<div className="border border-kumo-line rounded-lg p-3 space-y-2">
+						<p className="text-xs font-mono font-medium text-kumo-default">email.received</p>
+						<p className="text-xs text-kumo-subtle leading-relaxed">
+							Ask ChatGPT to monitor new mail and react when it arrives. Filter by mailbox,
+							sender, or subject. Use a Work chat on the web, or Work with Cloud in the desktop app.
+						</p>
+						<p className="text-xs text-kumo-default leading-relaxed">
+							Watch {mailboxId || "my mailbox"} for new emails with "invoice" in the subject
+							and summarize each one.
+						</p>
 					</div>
 				</div>
 

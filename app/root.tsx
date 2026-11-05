@@ -22,6 +22,8 @@ import {
 	Scripts,
 	ScrollRestoration,
 } from "react-router";
+import { AppDialogsProvider } from "~/components/AppDialogs";
+import { NavigationPrefetch } from "~/components/NavigationPrefetch";
 import { ApiError } from "~/services/api";
 import "./index.css";
 
@@ -69,7 +71,7 @@ const KumoLink = forwardRef<
 >(function KumoLink({ href, ...props }, ref) {
 	if (href && !href.startsWith("http")) {
 		return (
-			<RouterLink to={href} ref={ref} {...(props as Record<string, unknown>)} />
+			<RouterLink prefetch="intent" to={href} ref={ref} {...(props as Record<string, unknown>)} />
 		);
 	}
 	return <a href={href} ref={ref} {...props} />;
@@ -142,7 +144,10 @@ export default function App() {
 			<LinkProvider component={KumoLink}>
 				<TooltipProvider>
 					<Toasty>
-						<Outlet />
+						<AppDialogsProvider>
+							<NavigationPrefetch />
+							<Outlet />
+						</AppDialogsProvider>
 					</Toasty>
 				</TooltipProvider>
 			</LinkProvider>

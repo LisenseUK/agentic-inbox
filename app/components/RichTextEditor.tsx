@@ -2,6 +2,7 @@
 // Licensed under the Apache 2.0 license found in the LICENSE file or at:
 //     https://opensource.org/licenses/Apache-2.0
 
+import { useAppDialogs } from "~/components/AppDialogs";
 import { Button, Tooltip } from "@cloudflare/kumo";
 import {
 	ArrowClockwiseIcon,
@@ -37,6 +38,7 @@ export default function RichTextEditor({
 	value,
 	onChange,
 }: RichTextEditorProps) {
+	const { prompt } = useAppDialogs();
 	const editor = useEditor({
 		extensions: [
 			StarterKit,
@@ -73,17 +75,17 @@ export default function RichTextEditor({
 		}
 	}, [value, editor]);
 
-	const setLink = useCallback(() => {
+	const setLink = useCallback(async () => {
 		if (!editor) return;
 		const previousUrl = editor.getAttributes("link").href;
-		const url = window.prompt("URL", previousUrl);
-		if (url === null) return;
+		const url = await prompt({ title: "Edit link", description: "Enter a URL, or leave it empty to remove the link.", action: "Save link", defaultValue: previousUrl });
+		if (url === null || editor.isDestroyed) return;
 		if (url === "") {
 			editor.chain().focus().extendMarkRange("link").unsetLink().run();
 			return;
 		}
 		editor.chain().focus().extendMarkRange("link").setLink({ href: url }).run();
-	}, [editor]);
+	}, [editor, prompt]);
 
 	if (!editor) return null;
 

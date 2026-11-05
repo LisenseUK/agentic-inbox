@@ -3,7 +3,9 @@
 //     https://opensource.org/licenses/Apache-2.0
 
 import { useEffect, useRef } from "react";
-import { Outlet, useParams } from "react-router";
+import { Link, Navigate, Outlet, useParams } from "react-router";
+import { Loader } from "@cloudflare/kumo";
+import { ApiError } from "~/services/api";
 import AgentSidebar from "~/components/AgentSidebar";
 import ComposeEmail from "~/components/ComposeEmail";
 import Header from "~/components/Header";
@@ -14,7 +16,7 @@ import { useUIStore } from "~/hooks/useUIStore";
 export default function MailboxRoute() {
 	const { mailboxId } = useParams<{ mailboxId: string }>();
 	// Prefetch mailbox data for child components
-	useMailbox(mailboxId);
+	const { data: mailbox, isPending, error, refetch } = useMailbox(mailboxId);
 	const prevMailboxIdRef = useRef<string | undefined>(undefined);
 	const {
 		isSidebarOpen,
@@ -23,6 +25,8 @@ export default function MailboxRoute() {
 		closePanel,
 		closeComposeModal,
 	} = useUIStore();
+
+	useEffect(() => { void useUIStore.persist.rehydrate(); }, []);
 
 	useEffect(() => {
 		if (
@@ -37,6 +41,10 @@ export default function MailboxRoute() {
 
 		prevMailboxIdRef.current = mailboxId;
 	}, [mailboxId, closeComposeModal, closePanel, closeSidebar]);
+
+	if (error instanceof ApiError && error.status === 404) return <Navigate to="/" replace />;
+	if (isPending) return <div className="flex min-h-screen items-center justify-center"><Loader /></div>;
+	if (!mailbox) return <div role="alert" className="p-8 text-kumo-default">Could not load inbox. <button type="button" onClick={() => refetch()}>Try again</button> or <Link prefetch="intent" to="/">return to mailboxes</Link>.</div>;
 
 	return (
 		<div className="flex h-screen overflow-hidden">
@@ -70,11 +78,9 @@ export default function MailboxRoute() {
 			</div>
 
 			{/* Agent + MCP sidebar -- togglable on desktop */}
-			{isAgentPanelOpen && (
-				<div className="hidden lg:flex w-[380px] shrink-0 border-l border-kumo-line flex-col bg-kumo-base overflow-hidden">
-					<AgentSidebar />
-				</div>
-			)}
+			<div id="agent-sidebar" className={`${isAgentPanelOpen ? "hidden lg:flex" : "hidden"} w-[380px] shrink-0 border-l border-kumo-line flex-col bg-kumo-base overflow-hidden`}>
+				<AgentSidebar />
+			</div>
 
 			<ComposeEmail />
 		</div>

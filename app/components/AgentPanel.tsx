@@ -2,6 +2,7 @@
 // Licensed under the Apache 2.0 license found in the LICENSE file or at:
 //     https://opensource.org/licenses/Apache-2.0
 
+import { useAppDialogs } from "~/components/AppDialogs";
 import { Badge, Button, Loader, Tooltip } from "@cloudflare/kumo";
 import {
 	ArrowUpIcon,
@@ -304,6 +305,7 @@ function AgentChatConnected({
 }) {
 	const scrollRef = useRef<HTMLDivElement>(null);
 	const inputRef = useRef<HTMLTextAreaElement>(null);
+	const { confirm } = useAppDialogs();
 	const [inputValue, setInputValue] = useState("");
 	const { startCompose } = useUIStore();
 
@@ -361,8 +363,8 @@ function AgentChatConnected({
 								shape="square"
 								size="sm"
 								icon={<TrashIcon size={14} />}
-								onClick={() => {
-									if (window.confirm("Clear chat history?")) {
+								onClick={async () => {
+									if (await confirm({ title: "Clear chat history?", description: "The messages in this conversation will be removed.", action: "Clear chat" })) {
 										setMessages([]);
 									}
 								}}

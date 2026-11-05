@@ -15,7 +15,7 @@ import {
 	TrayIcon,
 } from "@phosphor-icons/react";
 import { useMemo, useState } from "react";
-import { NavLink, useNavigate, useParams } from "react-router";
+import { Link, NavLink, useParams } from "react-router";
 import { Folders, SYSTEM_FOLDER_IDS } from "shared/folders";
 import { useCreateFolder, useFolders } from "~/queries/folders";
 import { useMailbox } from "~/queries/mailboxes";
@@ -54,6 +54,7 @@ function FolderLink({
 }: FolderLinkProps) {
 	return (
 		<NavLink
+			prefetch="intent"
 			to={to}
 			onClick={onClick}
 			className={({ isActive }) =>
@@ -75,7 +76,6 @@ function FolderLink({
 
 export default function Sidebar() {
 	const { mailboxId } = useParams<{ mailboxId: string }>();
-	const navigate = useNavigate();
 	const { data: folders = [] } = useFolders(mailboxId);
 	const createFolderMutation = useCreateFolder();
 	const { startCompose, closeSidebar } = useUIStore();
@@ -124,17 +124,15 @@ export default function Sidebar() {
 		<aside className="h-full w-64 bg-kumo-recessed flex flex-col shrink-0 border-r border-kumo-line">
 			{/* Back + identity */}
 			<div className="px-4 pt-4 pb-1">
-				<button
-					type="button"
-					onClick={() => {
-						navigate("/");
-						closeSidebar();
-					}}
+				<Link
+					to="/"
+					prefetch="intent"
+					onClick={closeSidebar}
 					className="flex items-center gap-1.5 text-kumo-subtle text-sm hover:text-kumo-default transition-colors mb-2.5 cursor-pointer bg-transparent border-0 p-0"
 				>
 					<CaretLeftIcon size={14} />
 					<span>Mailboxes</span>
-				</button>
+				</Link>
 				<div className="px-1">
 					<div className="text-base font-semibold text-kumo-default truncate">
 						{displayName}

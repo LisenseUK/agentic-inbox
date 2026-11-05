@@ -2,6 +2,7 @@
 // Licensed under the Apache 2.0 license found in the LICENSE file or at:
 //     https://opensource.org/licenses/Apache-2.0
 
+import { useAppDialogs } from "~/components/AppDialogs";
 import { Button, Pagination, Tooltip } from "@cloudflare/kumo";
 import {
 	ArchiveIcon,
@@ -158,6 +159,7 @@ export default function EmailListRoute() {
 	const updateEmail = useUpdateEmail();
 	const markThreadRead = useMarkThreadRead();
 	const deleteEmail = useDeleteEmail();
+	const { confirm } = useAppDialogs();
 
 	const params = useMemo(
 		() => ({
@@ -210,11 +212,11 @@ export default function EmailListRoute() {
 			});
 	};
 
-	const handleDelete = (e: React.MouseEvent, emailId: string) => {
+	const handleDelete = async (e: React.MouseEvent, emailId: string) => {
 		e.preventDefault();
 		e.stopPropagation();
 		if (mailboxId) {
-			const confirmed = window.confirm("Are you sure you want to delete this email?");
+			const confirmed = await confirm({ title: "Delete email?", description: "Are you sure you want to delete this email?", action: "Delete" });
 			if (!confirmed) return;
 			deleteEmail.mutate({ mailboxId, id: emailId });
 			if (selectedEmailId === emailId) closePanel();

@@ -2,7 +2,7 @@
 // Licensed under the Apache 2.0 license found in the LICENSE file or at:
 //     https://opensource.org/licenses/Apache-2.0
 
-import type { Email, Folder, Mailbox } from "~/types";
+import type { Email, Folder, Mailbox, BlockedMailbox } from "~/types";
 
 const REQUEST_TIMEOUT_MS = 30_000;
 
@@ -101,6 +101,9 @@ const api = {
 
 	// Mailboxes
 	listMailboxes: () => get<Mailbox[]>("/api/v1/mailboxes"),
+	listBlockedMailboxes: () => get<BlockedMailbox[]>("/api/v1/blocked-mailboxes"),
+	blockMailbox: (email: string) => post<{ status: string }>("/api/v1/blocked-mailboxes", { email }),
+	unblockMailbox: (email: string) => del<{ status: string }>(`/api/v1/blocked-mailboxes/${encodeURIComponent(email)}`),
 	createMailbox: (email: string, name: string, settings?: unknown) =>
 		post<Mailbox>("/api/v1/mailboxes", { email, name, settings }),
 	getMailbox: (mailboxId: string) =>
