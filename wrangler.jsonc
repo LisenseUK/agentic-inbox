@@ -13,7 +13,10 @@
 		// Production deploys must also define POLICY_AUD and TEAM_DOMAIN.
 		// TEAM_DOMAIN may be the base Access URL or the full /cdn-cgi/access/certs URL.
 		// The worker now fails closed outside local development if Access is not configured.
-		"DOMAINS": "lisense.uk",
+		// Comma-separated email domains served by this inbox.
+		"DOMAINS": "lisense.uk,snailbox.live",
+		"MCP_PUBLIC_ORIGIN": "https://mail.lisense.uk",
+		"MCP_EVENTS_CALLBACK_HOSTS": "chatgpt.com,chat.openai.com",
 		"EMAIL_ADDRESSES": []
 	},
 	"send_email": [

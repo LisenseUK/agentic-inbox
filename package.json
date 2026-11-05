@@ -13,7 +13,7 @@
 		],
 		"bindings": {
 			"DOMAINS": {
-				"description": "Your domain with [Email Routing](https://developers.cloudflare.com/email-routing/) enabled (e.g. `example.com`). After deploying, create a catch-all Email Routing rule pointing to this Worker."
+				"description": "Comma-separated domains with [Email Routing](https://developers.cloudflare.com/email-routing/) enabled (e.g. `example.com,example.net`). After deploying, create a catch-all Email Routing rule pointing to this Worker for each domain."
 			}
 		}
 	},
@@ -23,12 +23,18 @@
 		"deploy": "npm run build && wrangler deploy",
 		"dev": "react-router dev",
 		"preview": "npm run build && vite preview",
-		"typecheck": "npm run cf-typegen && react-router typegen && tsc -b"
+		"typecheck": "npm run cf-typegen && react-router typegen && tsc -b",
+		"test:mcp-tools": "node --import tsx --test tests/mcp-tools-integration.test.ts",
+		"test:multi-domain": "node --import tsx --test tests/multi-domain-integration.test.ts",
+		"test:blocked-inboxes": "node --import tsx --test tests/blocked-mailboxes-integration.test.ts",
+		"test:mcp-events": "node --import tsx --test tests/mcp-events.test.ts tests/mcp-events-integration.test.ts"
 	},
 	"dependencies": {
+		"@cfworker/json-schema": "^4.1.1",
 		"@cloudflare/ai-chat": "^0.1.8",
 		"@cloudflare/kumo": "^1.13.0",
 		"@modelcontextprotocol/sdk": "^1.26.0",
+		"@modelcontextprotocol/server": "^2.3.1",
 		"@phosphor-icons/react": "^2.1.10",
 		"@tanstack/react-query": "^5.99.0",
 		"@tiptap/extension-color": "3.20.2",
@@ -95,7 +101,10 @@
 		"@types/node": "^20.19.37",
 		"@types/react": "^19.1.2",
 		"@types/react-dom": "^19.1.2",
+		"esbuild": "^0.27.3",
+		"miniflare": "^4.20260312.1",
 		"tailwindcss": "^4.1.4",
+		"tsx": "^4.23.15",
 		"typescript": "^5.8.3",
 		"vite": "^6.3.3",
 		"vite-tsconfig-paths": "^5.1.4",

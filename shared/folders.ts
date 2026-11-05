@@ -61,3 +61,9 @@ export const MOVE_FOLDER_TOOL_DESCRIPTION =
 export function getFolderDisplayName(folderId: string): string {
 	return FOLDER_DISPLAY_NAMES[folderId.toLowerCase()] || folderId.charAt(0).toUpperCase() + folderId.slice(1);
 }
+
+/** Stable IDs for user-created folders, shared by HTTP and MCP. */
+export function folderSlug(name: string) {
+	return name.toLowerCase().replace(/\s+/g, "-").replace(/[^\w-]+/g, "")
+		.replace(/--+/g, "-").replace(/^-+/, "").replace(/-+$/, "");
+}

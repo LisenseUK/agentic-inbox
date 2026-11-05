@@ -8,7 +8,10 @@ import { jwtVerify, createRemoteJWKSet } from "jose";
 import { createRequestHandler } from "react-router";
 import { app as apiApp, receiveEmail } from "./index";
 import { EmailMCP } from "./mcp";
+import { handleModernMcp, isLegacyRequest } from "./mcp/modern";
+import type { EventPrincipal } from "./mcp/events-protocol";
 import type { Env } from "./types";
+import { isMailboxActive } from "./lib/mailbox-access";
 
 export { MailboxDO } from "./durableObject";
 export { EmailAgent } from "./agent";
@@ -40,12 +43,13 @@ function getAccessUrls(teamDomain: string) {
 }
 
 // Main app that wraps the API and adds React Router fallback
-const app = new Hono<{ Bindings: Env }>();
+const app = new Hono<{ Bindings: Env; Variables: { eventPrincipal: EventPrincipal } }>();
 
 // Cloudflare Access JWT validation middleware (production only)
 app.use("*", async (c, next) => {
 	// Skip validation in development
 	if (import.meta.env.DEV) {
+		c.set("eventPrincipal", { id: "local-development", assertion: "", expiresAt: Date.now() + 60 * 60 * 1000, local: true });
 		return next();
 	}
 
@@ -67,10 +71,13 @@ app.use("*", async (c, next) => {
 	try {
 		const { issuer, certsUrl } = getAccessUrls(TEAM_DOMAIN);
 		const JWKS = createRemoteJWKSet(certsUrl);
-		await jwtVerify(token, JWKS, {
+		const { payload } = await jwtVerify(token, JWKS, {
 			issuer,
 			audience: POLICY_AUD,
 		});
+		if (payload.sub && payload.exp && typeof payload.email === "string") {
+			c.set("eventPrincipal", { id: `${issuer}:${payload.sub}`, assertion: token, expiresAt: payload.exp * 1000 });
+		}
 	} catch {
 		return c.text("Invalid or expired Access token", 403);
 	}
@@ -84,9 +91,15 @@ app.use("*", async (c, next) => {
 // Must be before API routes and React Router catch-all
 const mcpHandler = EmailMCP.serve("/mcp", { binding: "EMAIL_MCP" });
 app.all("/mcp", async (c) => {
+	if (!await isLegacyRequest(c.req.raw, { maxRequestBodySize: 1024 * 1024 })) {
+		return handleModernMcp(c.req.raw, c.env, c.get("eventPrincipal"));
+	}
 	return mcpHandler.fetch(c.req.raw, c.env, c.executionCtx as ExecutionContext);
 });
 app.all("/mcp/*", async (c) => {
+	if (!await isLegacyRequest(c.req.raw, { maxRequestBodySize: 1024 * 1024 })) {
+		return handleModernMcp(c.req.raw, c.env, c.get("eventPrincipal"));
+	}
 	return mcpHandler.fetch(c.req.raw, c.env, c.executionCtx as ExecutionContext);
 });
 
@@ -95,6 +108,10 @@ app.route("/", apiApp);
 
 // Agent WebSocket routing - must be before React Router catch-all
 app.all("/agents/*", async (c) => {
+	const path = new URL(c.req.url).pathname.split("/");
+	if (path[2] === "email-agent" && (!path[3] || !await isMailboxActive(c.env, decodeURIComponent(path[3])))) {
+		return c.text("Not found", 404);
+	}
 	const response = await routeAgentRequest(c.req.raw, c.env);
 	if (response) return response;
 	return c.text("Agent not found", 404);
@@ -111,7 +128,7 @@ app.all("*", (c) => {
 export default {
 	fetch: app.fetch,
 	async email(
-		event: { raw: ReadableStream; rawSize: number },
+		event: Pick<ForwardableEmailMessage, "to" | "raw" | "rawSize">,
 		env: Env,
 		ctx: ExecutionContext,
 	) {

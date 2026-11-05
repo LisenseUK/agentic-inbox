@@ -13,6 +13,7 @@ import type { EmailFull } from "./schemas";
 import { Folders } from "../../shared/folders";
 import type { Env } from "../types";
 import { formatQuotedDate } from "../../shared/dates";
+import { isMailboxActive, listMailboxObjects, MailboxError } from "./mailbox-access";
 
 // ── DO Stub ────────────────────────────────────────────────────────
 
@@ -20,12 +21,13 @@ import { formatQuotedDate } from "../../shared/dates";
  * Resolve a MailboxDO stub from a mailbox email address.
  * Replaces the repeated 3-line ns.idFromName / ns.get pattern.
  */
-export function getMailboxStub(
+export async function getMailboxStub(
 	env: Env,
 	mailboxId: string,
-): DurableObjectStub<MailboxDO> {
+): Promise<DurableObjectStub<MailboxDO>> {
+	if (!await isMailboxActive(env, mailboxId)) throw new MailboxError("Mailbox not found", 404);
 	const ns = env.MAILBOX;
-	const id = ns.idFromName(mailboxId);
+	const id = ns.idFromName(mailboxId.toLowerCase().trim());
 	return ns.get(id);
 }
 
@@ -37,11 +39,14 @@ export function getMailboxStub(
 export async function listMailboxes(
 	bucket: R2Bucket,
 ): Promise<{ id: string; email: string }[]> {
-	const list = await bucket.list({ prefix: "mailboxes/" });
-	return list.objects.map((obj) => {
+	const [objects, blocked] = await Promise.all([
+		listMailboxObjects(bucket, "mailboxes/"), listMailboxObjects(bucket, "blocked-mailboxes/"),
+	]);
+	const blockedIds = new Set(blocked.map((object) => object.key.slice("blocked-mailboxes/".length, -".json".length)));
+	return objects.map((obj) => {
 		const id = obj.key.replace("mailboxes/", "").replace(".json", "");
 		return { id, email: id };
-	});
+	}).filter((mailbox) => !blockedIds.has(mailbox.id.toLowerCase()));
 }
 
 // ── Sender Validation ──────────────────────────────────────────────
