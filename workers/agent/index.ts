@@ -31,6 +31,8 @@ import {
 } from "../lib/tools";
 import { Folders, FOLDER_TOOL_DESCRIPTION, MOVE_FOLDER_TOOL_DESCRIPTION } from "../../shared/folders";
 import type { Env } from "../types";
+import { isReplyDraftingEnabled } from "../lib/mailbox-management";
+import { isMailboxActive, MailboxError } from "../lib/mailbox-access";
 
 // AI SDK v6 changed tool() overloads significantly. We define tools as plain
 // objects matching the Tool type to avoid overload resolution issues.
@@ -276,6 +278,7 @@ export class EmailAgent extends AIChatAgent<any> {
 	async onChatMessage(onFinish: any) {
 		const env = this.env as Env;
 		const mailboxId = this.name;
+		if (!await isMailboxActive(env, mailboxId)) throw new MailboxError("Mailbox not found", 404);
 		const workersai = createWorkersAI({ binding: env.AI });
 		const tools = createEmailTools(env, mailboxId);
 		const systemPrompt = await getSystemPrompt(env, mailboxId);
@@ -307,6 +310,7 @@ export class EmailAgent extends AIChatAgent<any> {
 					subject: string;
 					threadId: string;
 				};
+				if (!await isMailboxActive(this.env as Env, emailData.mailboxId)) return new Response("Not found", { status: 404 });
 				const result = await this.handleNewEmail(emailData);
 				return new Response(JSON.stringify(result), {
 					headers: { "Content-Type": "application/json" },
@@ -319,7 +323,12 @@ export class EmailAgent extends AIChatAgent<any> {
 				);
 			}
 		}
+		if (!await isMailboxActive(this.env as Env, this.name)) return new Response("Not found", { status: 404 });
 		return super.onRequest(request);
+	}
+
+	async suspendMailbox() {
+		for (const connection of this.getConnections()) connection.close(1008, "Inbox unavailable");
 	}
 
 	/**
@@ -334,13 +343,16 @@ export class EmailAgent extends AIChatAgent<any> {
 		threadId: string;
 	}) {
 		const env = this.env as Env;
+		if (!(await isReplyDraftingEnabled(env, emailData.mailboxId))) {
+			return { status: "drafting_disabled" };
+		}
 		const workersai = createWorkersAI({ binding: env.AI });
 		const tools = createEmailTools(env, emailData.mailboxId);
 		const systemPrompt = await getSystemPrompt(env, emailData.mailboxId);
 
 		// Pre-read the email and thread so the agent has full context
 		// without needing to waste tool calls discovering it
-		const stub = getMailboxStub(env, emailData.mailboxId);
+		const stub = await getMailboxStub(env, emailData.mailboxId);
 
 		let emailBody = "";
 		let threadContext = "";
@@ -469,6 +481,7 @@ Based on the email content and thread context above, draft a reply using draft_r
 				tools,
 				stopWhen: stepCountIs(5),
 			});
+			if (!await isMailboxActive(env, emailData.mailboxId)) return { status: "mailbox_unavailable" };
 
 			// Check if draft_reply was called (saves to Drafts as side effect).
 			// If NOT, save the agent's text response as a draft directly.
@@ -483,7 +496,7 @@ Based on the email content and thread context above, draft a reply using draft_r
 					// Inline text was entirely agent commentary, skip
 				} else {
 					const draftId = crypto.randomUUID();
-					const draftStub = getMailboxStub(env, emailData.mailboxId);
+					const draftStub = await getMailboxStub(env, emailData.mailboxId);
 					const reSubject = emailData.subject.startsWith("Re:")
 						? emailData.subject
 						: `Re: ${emailData.subject}`;

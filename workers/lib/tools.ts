@@ -28,7 +28,7 @@ import {
 	getReplyToAddress,
 } from "./email-helpers";
 import { verifyDraft } from "./ai";
-import { sendEmail } from "../email-sender";
+import { sendMailboxEmail } from "../email-sender";
 import { Folders } from "../../shared/folders";
 import type { Env } from "../types";
 
@@ -57,7 +57,7 @@ export async function toolListEmails(
 	mailboxId: string,
 	params: { folder: string; limit: number; page: number },
 ) {
-	const stub = getMailboxStub(env, mailboxId);
+	const stub = await getMailboxStub(env, mailboxId);
 	return stub.getEmails({
 		folder: params.folder,
 		limit: params.limit,
@@ -74,7 +74,7 @@ export async function toolGetEmail(
 	mailboxId: string,
 	emailId: string,
 ) {
-	const stub = getMailboxStub(env, mailboxId);
+	const stub = await getMailboxStub(env, mailboxId);
 	const email = await getFullEmail(stub, emailId);
 	if (!email) return { error: "Email not found" };
 	return email;
@@ -87,7 +87,7 @@ export async function toolGetThread(
 	mailboxId: string,
 	threadId: string,
 ) {
-	const stub = getMailboxStub(env, mailboxId);
+	const stub = await getMailboxStub(env, mailboxId);
 	return getFullThread(stub, threadId);
 }
 
@@ -98,7 +98,7 @@ export async function toolSearchEmails(
 	mailboxId: string,
 	params: { query: string; folder?: string },
 ) {
-	const stub = getMailboxStub(env, mailboxId);
+	const stub = await getMailboxStub(env, mailboxId);
 	return (stub as unknown as MailboxSearchStub).searchEmails({
 		query: params.query,
 		folder: params.folder,
@@ -132,7 +132,7 @@ export async function toolDraftReply(
 	| { status: "draft_saved"; draftId: string; message: string; draft: Record<string, string> }
 	| { error: string }
 > {
-	const stub = getMailboxStub(env, mailboxId);
+	const stub = await getMailboxStub(env, mailboxId);
 
 	// Verify/sanitize if requested
 	let processedBody = params.body.trim();
@@ -217,7 +217,7 @@ export async function toolDraftEmail(
 	| { status: string; draftId: string; threadId?: string; message: string; draft?: Record<string, string> }
 	| { error: string }
 > {
-	const stub = getMailboxStub(env, mailboxId);
+	const stub = await getMailboxStub(env, mailboxId);
 
 	let processedBody = params.body.trim();
 	if (params.runVerifyDraft) {
@@ -288,7 +288,7 @@ export async function toolUpdateDraft(
 	| { status: string; newDraftId: string; oldDraftId: string; message: string }
 	| { error: string }
 > {
-	const stub = getMailboxStub(env, mailboxId);
+	const stub = await getMailboxStub(env, mailboxId);
 
 	const oldDraft = (await stub.getEmail(params.draftId)) as EmailFull | null;
 	if (!oldDraft) {
@@ -337,7 +337,7 @@ export async function toolMarkEmailRead(
 	emailId: string,
 	read: boolean,
 ) {
-	const stub = getMailboxStub(env, mailboxId);
+	const stub = await getMailboxStub(env, mailboxId);
 	await stub.updateEmail(emailId, { read });
 	return { status: "updated", emailId, read };
 }
@@ -350,7 +350,7 @@ export async function toolMoveEmail(
 	emailId: string,
 	folderId: string,
 ) {
-	const stub = getMailboxStub(env, mailboxId);
+	const stub = await getMailboxStub(env, mailboxId);
 	const success = await stub.moveEmail(emailId, folderId);
 	if (success) {
 		return { status: "moved", emailId, folder: folderId };
@@ -365,7 +365,7 @@ export async function toolDiscardDraft(
 	mailboxId: string,
 	draftId: string,
 ) {
-	const stub = getMailboxStub(env, mailboxId);
+	const stub = await getMailboxStub(env, mailboxId);
 	const email = (await stub.getEmail(draftId)) as { folder_id?: string } | null;
 	if (!email) {
 		return { error: "Draft not found" };
@@ -384,7 +384,7 @@ export async function toolDeleteEmail(
 	mailboxId: string,
 	emailId: string,
 ) {
-	const stub = getMailboxStub(env, mailboxId);
+	const stub = await getMailboxStub(env, mailboxId);
 	const result = await stub.deleteEmail(emailId);
 	if (result === null) {
 		return { error: "Email not found", emailId };
@@ -407,7 +407,7 @@ export async function toolSendReply(
 	| { status: "sent"; messageId: string; message: string }
 	| { error: string }
 > {
-	const stub = getMailboxStub(env, mailboxId);
+	const stub = await getMailboxStub(env, mailboxId);
 
 	// Check send rate limit
 	const rateLimitError = await (stub as unknown as RateLimitStub).checkSendRateLimit();
@@ -439,7 +439,7 @@ export async function toolSendReply(
 	const fullBodyHtml = sanitizedBody + quotedBlock;
 
 	try {
-		await sendEmail(env.EMAIL, {
+		await sendMailboxEmail(env, {
 			to: replyRecipient,
 			from: mailboxId,
 			subject: params.subject,
@@ -486,7 +486,7 @@ export async function toolSendEmail(
 	| { status: "sent"; messageId: string; message: string }
 	| { error: string }
 > {
-	const stub = getMailboxStub(env, mailboxId);
+	const stub = await getMailboxStub(env, mailboxId);
 
 	// Check send rate limit
 	const rateLimitError = await (stub as unknown as RateLimitStub).checkSendRateLimit();
@@ -504,7 +504,7 @@ export async function toolSendEmail(
 	}
 
 	try {
-		await sendEmail(env.EMAIL, {
+		await sendMailboxEmail(env, {
 			to: params.to,
 			from: mailboxId,
 			subject: params.subject,

@@ -6,7 +6,7 @@ import { type Context, Hono } from "hono";
 import { cors } from "hono/cors";
 import PostalMime from "postal-mime";
 import { z } from "zod";
-import { sendEmail } from "./email-sender";
+import { sendMailboxEmail } from "./email-sender";
 import { storeAttachments, type StoredAttachment } from "./lib/attachments";
 import {
 	validateSender,
@@ -17,19 +17,17 @@ import {
 } from "./lib/email-helpers";
 import { SendEmailRequestSchema } from "./lib/schemas";
 import { handleReplyEmail, handleForwardEmail } from "./routes/reply-forward";
-import { Folders } from "../shared/folders";
+import { Folders, folderSlug } from "../shared/folders";
 import type { Env } from "./types";
 import { requireMailbox, type MailboxContext } from "./lib/mailbox";
+import { resolveInboundMailbox } from "./lib/inbound-mailbox";
+
+import { createMailbox, deleteMailbox, CreateMailboxSchema, MailboxSettingsSchema, MailboxError, isReplyDraftingEnabled, blockMailbox, unblockMailbox, listBlockedMailboxes } from "./lib/mailbox-management";
+import { isMailboxActive, isMailboxBlocked } from "./lib/mailbox-access";
 
 type AppContext = Context<MailboxContext>;
 
 // -- Request body schemas (kept for validation) ---------------------
-
-const CreateMailboxBody = z.object({
-	email: z.string().email(),
-	name: z.string().min(1),
-	settings: z.record(z.any()).optional(), // unvalidated — agentSystemPrompt goes straight to AI
-});
 
 const DraftBody = z.object({
 	to: z.string().optional(),
@@ -43,12 +41,6 @@ const DraftBody = z.object({
 });
 
 // -- Helpers --------------------------------------------------------
-
-function slugify(text: string) { // can return "" for non-alphanumeric input
-	return text.toString().toLowerCase()
-		.replace(/\s+/g, "-").replace(/[^\w-]+/g, "")
-		.replace(/--+/g, "-").replace(/^-+/, "").replace(/-+$/, "");
-}
 
 function intQuery(c: AppContext, key: string): number | undefined {
 	const v = c.req.query(key);
@@ -66,6 +58,12 @@ function boolQuery(c: AppContext, key: string): boolean | undefined {
 // -- App & middleware -----------------------------------------------
 
 const app = new Hono<MailboxContext>();
+app.onError((error, c) => {
+	if (error instanceof MailboxError) return c.json({ error: error.message }, error.status);
+	if (error instanceof z.ZodError) return c.json({ error: error.message }, 400);
+	console.error(error);
+	return c.json({ error: "Internal Server Error" }, 500);
+});
 app.use("/api/*", cors({
 	origin: (origin) => {
 		// Same-origin requests have no Origin header — allow them.
@@ -85,14 +83,22 @@ app.use("/api/v1/mailboxes/:mailboxId/*", requireMailbox);
 
 // -- Config ---------------------------------------------------------
 
-app.get("/api/v1/config", (c) => {
+app.get("/api/v1/config", async (c) => {
 	const domainsRaw = c.env.DOMAINS || "";
 	const domains = domainsRaw.split(",").map((d) => d.trim()).filter(Boolean);
-	const emailAddresses = c.env.EMAIL_ADDRESSES ?? [];
+	const blocked = new Set((await listBlockedMailboxes(c.env)).map((mailbox) => mailbox.email));
+	const emailAddresses = ((c.env.EMAIL_ADDRESSES ?? []) as string[]).filter((email) => !blocked.has(email.toLowerCase()));
 	return c.json({ domains, emailAddresses });
 });
 
 // -- Mailboxes ------------------------------------------------------
+
+app.get("/api/v1/blocked-mailboxes", async (c) => c.json(await listBlockedMailboxes(c.env)));
+app.post("/api/v1/blocked-mailboxes", async (c) => {
+	const { email } = z.object({ email: z.string().email() }).parse(await c.req.json());
+	return c.json(await blockMailbox(c.env, email));
+});
+app.delete("/api/v1/blocked-mailboxes/:mailboxId", async (c) => c.json(await unblockMailbox(c.env, c.req.param("mailboxId"))));
 
 app.get("/api/v1/mailboxes", async (c) => {
 	const allMailboxes = await listMailboxes(c.env.BUCKET);
@@ -100,24 +106,18 @@ app.get("/api/v1/mailboxes", async (c) => {
 });
 
 app.post("/api/v1/mailboxes", async (c) => {
-	const { name, settings, email: rawEmail } = CreateMailboxBody.parse(await c.req.json());
-	const email = rawEmail.toLowerCase();
-	const allowedAddresses = (c.env.EMAIL_ADDRESSES ?? []) as string[];
-	if (allowedAddresses.length > 0 && !allowedAddresses.map((a) => a.toLowerCase()).includes(email)) {
-		return c.json({ error: "Mailbox creation is restricted to configured EMAIL_ADDRESSES" }, 403);
+	try {
+		return c.json(await createMailbox(c.env, CreateMailboxSchema.parse(await c.req.json())), 201);
+	} catch (error) {
+		if (error instanceof MailboxError) return c.json({ error: error.message }, error.status);
+		if (error instanceof z.ZodError) return c.json({ error: error.message }, 400);
+		throw error;
 	}
-	const key = `mailboxes/${email}.json`;
-	if (await c.env.BUCKET.head(key)) return c.json({ error: "Mailbox already exists" }, 409);
-	const defaultSettings = { fromName: name, forwarding: { enabled: false, email: "" }, signature: { enabled: false, text: "" }, autoReply: { enabled: false, subject: "", message: "" } };
-	const finalSettings = { ...defaultSettings, ...settings };
-	await c.env.BUCKET.put(key, JSON.stringify(finalSettings));
-	const stub = c.env.MAILBOX.get(c.env.MAILBOX.idFromName(email));
-	await stub.getFolders();
-	return c.json({ id: email, email, name, settings: finalSettings }, 201);
 });
 
 app.get("/api/v1/mailboxes/:mailboxId", async (c) => {
 	const mailboxId = c.req.param("mailboxId")!;
+	if (!await isMailboxActive(c.env, mailboxId)) return c.json({ error: "Not found" }, 404);
 	const obj = await c.env.BUCKET.get(`mailboxes/${mailboxId}.json`);
 	if (!obj) return c.json({ error: "Not found" }, 404);
 	return c.json({ id: mailboxId, name: mailboxId, email: mailboxId, settings: await obj.json() });
@@ -125,7 +125,10 @@ app.get("/api/v1/mailboxes/:mailboxId", async (c) => {
 
 app.put("/api/v1/mailboxes/:mailboxId", async (c) => {
 	const mailboxId = c.req.param("mailboxId")!;
-	const { settings } = (await c.req.json()) as { settings: Record<string, unknown> };
+	if (!await isMailboxActive(c.env, mailboxId)) return c.json({ error: "Not found" }, 404);
+	const parsed = z.object({ settings: MailboxSettingsSchema }).safeParse(await c.req.json());
+	if (!parsed.success) return c.json({ error: parsed.error.message }, 400);
+	const { settings } = parsed.data;
 	const key = `mailboxes/${mailboxId}.json`;
 	if (!(await c.env.BUCKET.head(key))) return c.json({ error: "Not found" }, 404);
 	await c.env.BUCKET.put(key, JSON.stringify(settings));
@@ -133,11 +136,13 @@ app.put("/api/v1/mailboxes/:mailboxId", async (c) => {
 });
 
 app.delete("/api/v1/mailboxes/:mailboxId", async (c) => {
-	const mailboxId = c.req.param("mailboxId")!;
-	const key = `mailboxes/${mailboxId}.json`;
-	if (!(await c.env.BUCKET.head(key))) return c.json({ error: "Not found" }, 404);
-	await c.env.BUCKET.delete(key); // TODO: also delete DO data and R2 attachment blobs
-	return c.body(null, 204);
+	try {
+		await deleteMailbox(c.env, c.req.param("mailboxId")!);
+		return c.body(null, 204);
+	} catch (error) {
+		if (error instanceof MailboxError) return c.json({ error: error.message }, error.status);
+		throw error;
+	}
 });
 
 // -- Emails ---------------------------------------------------------
@@ -202,7 +207,7 @@ app.post("/api/v1/mailboxes/:mailboxId/emails", async (c: AppContext) => {
 	}, attachmentData);
 
 	c.executionCtx.waitUntil(
-		sendEmail(c.env.EMAIL, {
+		sendMailboxEmail(c.env, {
 			to, cc, bcc, from, subject, html, text,
 			attachments: attachments?.map((att) => ({ content: att.content, filename: att.filename, type: att.type, disposition: att.disposition || "attachment", contentId: att.contentId })),
 			...(in_reply_to ? { headers: buildThreadingHeaders(in_reply_to, references || []) } : {}),
@@ -277,7 +282,7 @@ app.get("/api/v1/mailboxes/:mailboxId/folders", async (c: AppContext) => c.json(
 
 app.post("/api/v1/mailboxes/:mailboxId/folders", async (c: AppContext) => {
 	const { name } = (await c.req.json()) as { name: string };
-	const slug = slugify(name);
+	const slug = folderSlug(name);
 	if (!slug) return c.json({ error: "Folder name must contain alphanumeric characters" }, 400);
 	const f = await c.var.mailboxStub.createFolder(slug, name);
 	return f ? c.json(f, 201) : c.json({ error: "Folder with this name already exists" }, 409);
@@ -345,43 +350,21 @@ async function streamToArrayBuffer(stream: ReadableStream, streamSize: number) {
 	return result;
 }
 
-async function receiveEmail(event: { raw: ReadableStream; rawSize: number }, env: Env, ctx: ExecutionContext) {
+async function receiveEmail(event: Pick<ForwardableEmailMessage, "to" | "raw" | "rawSize">, env: Env, ctx: ExecutionContext) {
+	if (await isMailboxBlocked(env.BUCKET, event.to)) return;
 	const rawEmail = await streamToArrayBuffer(event.raw, event.rawSize);
 	const parsedEmail = await new PostalMime().parse(rawEmail);
 
-	if (!parsedEmail.to?.length || !parsedEmail.to[0].address) throw new Error("received email with empty to");
-
-	const allowedAddresses = ((env.EMAIL_ADDRESSES ?? []) as string[]).map((a) => a.toLowerCase());
-	const allRecipients = parsedEmail.to.map((t) => t.address?.toLowerCase()).filter(Boolean) as string[];
+	const allRecipients = (parsedEmail.to || []).map((t) => t.address?.toLowerCase()).filter(Boolean) as string[];
 	const ccRecipients = (parsedEmail.cc || []).map((e) => e.address?.toLowerCase()).filter(Boolean) as string[];
 	const bccRecipients = (parsedEmail.bcc || []).map((e) => e.address?.toLowerCase()).filter(Boolean) as string[];
 
-	let mailboxId: string | undefined;
-	if (allowedAddresses.length > 0) {
-		mailboxId = allRecipients.find((addr) => allowedAddresses.includes(addr));
-		if (!mailboxId) { console.log(`Ignoring email: no recipient matches EMAIL_ADDRESSES.`); return; }
-	} else { mailboxId = allRecipients[0]; }
-	if (!mailboxId) throw new Error("received email with no valid recipient address");
+	// Route by the SMTP envelope, including CC/BCC deliveries. The visible To
+	// header can name another mailbox or list recipients on several domains.
+	const mailboxId = await resolveInboundMailbox(env, event.to);
+	if (!mailboxId) return;
 
 	const messageId = crypto.randomUUID();
-	if (!(await env.BUCKET.head(`mailboxes/${mailboxId}.json`))) {
-		const catchAll = (env.CATCH_ALL_MAILBOX || "").toLowerCase().trim();
-		if (catchAll && catchAll !== mailboxId) {
-			// Auto-create the catch-all mailbox on first use if it doesn't exist yet
-			if (!(await env.BUCKET.head(`mailboxes/${catchAll}.json`))) {
-				console.log(`Auto-creating catch-all mailbox ${catchAll}`);
-				const defaultSettings = { fromName: "Catch-All", forwarding: { enabled: false, email: "" }, signature: { enabled: false, text: "" }, autoReply: { enabled: false, subject: "", message: "" } };
-				await env.BUCKET.put(`mailboxes/${catchAll}.json`, JSON.stringify(defaultSettings));
-				const catchAllStub = env.MAILBOX.get(env.MAILBOX.idFromName(catchAll));
-				await catchAllStub.getFolders();
-			}
-			console.log(`No mailbox for ${mailboxId}, routing to catch-all ${catchAll}`);
-			mailboxId = catchAll;
-		} else {
-			console.log(`Ignoring email for ${mailboxId}: mailbox does not exist and no catch-all configured`);
-			return;
-		}
-	}
 
 	const stub = env.MAILBOX.get(env.MAILBOX.idFromName(mailboxId));
 
@@ -409,23 +392,36 @@ async function receiveEmail(event: { raw: ReadableStream; rawSize: number }, env
 
 	const originalMessageId = parsedEmail.messageId ? extractMsgId(parsedEmail.messageId) : null;
 
+	if (await isMailboxBlocked(env.BUCKET, mailboxId)) return;
+	const receivedAt = new Date().toISOString();
 	await stub.createEmail(Folders.INBOX, {
 		id: messageId, subject: parsedEmail.subject || "",
 		sender: (parsedEmail.from?.address || "").toLowerCase(), recipient: allRecipients.join(", "),
 		cc: ccRecipients.join(", ") || null, bcc: bccRecipients.join(", ") || null,
-		date: new Date().toISOString(), // uses receive time, not the email's Date header
+		date: receivedAt, // uses receive time, not the email's Date header
 		body: parsedEmail.html || parsedEmail.text || "",
 		in_reply_to: inReplyTo, email_references: emailReferences.length > 0 ? JSON.stringify(emailReferences) : null,
 		thread_id: threadId, message_id: originalMessageId, raw_headers: JSON.stringify(parsedEmail.headers),
-	}, attachmentData);
+	}, attachmentData, {
+		eventId: `evt_email_${messageId}`, name: "email.received", timestamp: receivedAt, cursor: null,
+		data: {
+			mailboxId, emailId: messageId, threadId: threadId.slice(0, 1024),
+			from: (parsedEmail.from?.address || "").toLowerCase().slice(0, 254),
+			subject: (parsedEmail.subject || "").slice(0, 1000),
+			preview: (parsedEmail.text || parsedEmail.html?.replace(/<[^>]+>/g, " ") || "").replace(/\s+/g, " ").trim().slice(0, 500),
+			url: new URL(`/mailbox/${encodeURIComponent(mailboxId)}/emails/inbox`, env.MCP_PUBLIC_ORIGIN).href,
+		},
+	});
 
-	const agentStub = env.EMAIL_AGENT.get(env.EMAIL_AGENT.idFromName(mailboxId));
-	ctx.waitUntil(agentStub.fetch(new Request("https://agents/onNewEmail", {
-		method: "POST", headers: { "Content-Type": "application/json" },
-		body: JSON.stringify({ mailboxId, emailId: messageId, sender: (parsedEmail.from?.address || "").toLowerCase(), subject: parsedEmail.subject || "", threadId }),
-	})).catch((e) => console.error("Auto-draft trigger failed:", (e as Error).message)));
+	if (await isReplyDraftingEnabled(env, mailboxId)) {
+		const agentStub = env.EMAIL_AGENT.get(env.EMAIL_AGENT.idFromName(mailboxId));
+		ctx.waitUntil(agentStub.fetch(new Request("https://agents/onNewEmail", {
+			method: "POST", headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ mailboxId, emailId: messageId, sender: (parsedEmail.from?.address || "").toLowerCase(), subject: parsedEmail.subject || "", threadId }),
+		})).catch((e) => console.error("Auto-draft trigger failed:", (e as Error).message)));
+	}
 
-	if (env.DISCORD_WEBHOOK_URL) {
+	if (env.DISCORD_WEBHOOK_URL && await isMailboxActive(env, mailboxId)) {
 		const fromName = parsedEmail.from?.name || parsedEmail.from?.address || "Unknown";
 		const fromAddress = (parsedEmail.from?.address || "").toLowerCase();
 		const subject = parsedEmail.subject || "(no subject)";
@@ -439,9 +435,7 @@ async function receiveEmail(event: { raw: ReadableStream; rawSize: number }, env
 		const emailHash = fromAddress ? [...new TextEncoder().encode(fromAddress)].map((b) => b.toString(16).padStart(2, "0")).join("") : "";
 		const authorIcon = emailHash ? `https://www.gravatar.com/avatar/${emailHash}?d=identicon&s=64` : undefined;
 
-		// Build a direct link to the mailbox inbox — uses DOMAINS env var if present
-		const domain = ((env as any).DOMAINS as string | undefined)?.split(",")[0]?.trim();
-		const inboxUrl = domain ? `https://${domain}/mailbox/${encodeURIComponent(mailboxId)}/emails/inbox` : undefined;
+		const inboxUrl = new URL(`/mailbox/${encodeURIComponent(mailboxId)}/emails/inbox`, env.MCP_PUBLIC_ORIGIN).href;
 
 		const fields: { name: string; value: string; inline?: boolean }[] = [];
 		if (attachmentData.length > 0) {

@@ -7,6 +7,7 @@
  * Eliminates the triplicated atob → Uint8Array → R2.put pattern.
  */
 import type { Env } from "../types";
+import { isMailboxActive } from "./mailbox-access";
 
 export interface StoredAttachment {
 	id: string;
@@ -54,4 +55,30 @@ export async function storeAttachments(
 		});
 	}
 	return results;
+}
+
+/** Encode stored binary content for MCP resources and the app's attachment payloads. */
+export function attachmentBase64(bytes: Uint8Array): string {
+	let binary = "";
+	for (let offset = 0; offset < bytes.length; offset += 8192) {
+		binary += String.fromCharCode(...bytes.subarray(offset, offset + 8192));
+	}
+	return btoa(binary);
+}
+
+export async function readEmailAttachment(env: Env, mailboxId: string, emailId: string, attachmentId: string, maxBytes = 5 * 1024 * 1024) {
+	if (!await isMailboxActive(env, mailboxId)) return { error: "Mailbox not found" };
+	const stub = env.MAILBOX.get(env.MAILBOX.idFromName(mailboxId));
+	const email = await stub.getEmail(emailId);
+	if (!email) return { error: "Email not found" };
+	const attachment = email.attachments.find((item) => item.id === attachmentId);
+	if (!attachment) return { error: "Attachment not found on this email" };
+	const obj = await env.BUCKET.get(`attachments/${emailId}/${attachmentId}/${attachment.filename}`);
+	if (!obj) return { error: "Attachment file not found" };
+	if (obj.size > maxBytes) {
+		await obj.body.cancel();
+		return { error: `Attachment exceeds the ${maxBytes} byte limit. Download it through the app instead.` };
+	}
+	const bytes = new Uint8Array(await obj.arrayBuffer());
+	return { attachment, bytes };
 }

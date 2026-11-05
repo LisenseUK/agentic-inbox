@@ -2,6 +2,9 @@
 // Licensed under the Apache 2.0 license found in the LICENSE file or at:
 //     https://opensource.org/licenses/Apache-2.0
 
+import type { Env } from "./types";
+import { isMailboxActive, MailboxError } from "./lib/mailbox-access";
+
 /**
  * Email sending via Cloudflare Email Service binding.
  *
@@ -59,7 +62,7 @@ export async function sendEmail(
 
 	if (params.attachments && params.attachments.length > 0) {
 		message.attachments = params.attachments.map((att) => ({
-			content: att.content,
+			content: Uint8Array.from(atob(att.content), (character) => character.charCodeAt(0)),
 			filename: att.filename,
 			type: att.type,
 			disposition: att.disposition,
@@ -69,4 +72,11 @@ export async function sendEmail(
 
 	const result = await binding.send(message as any);
 	return { messageId: result.messageId };
+}
+
+/** Recheck access at delivery time, including deferred HTTP sends. */
+export async function sendMailboxEmail(env: Env, params: SendEmailParams) {
+	const address = typeof params.from === "string" ? params.from : params.from.email;
+	if (!await isMailboxActive(env, address)) throw new MailboxError("Mailbox not found", 404);
+	return sendEmail(env.EMAIL, params);
 }

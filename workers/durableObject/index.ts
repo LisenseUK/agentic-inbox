@@ -10,6 +10,9 @@ import * as schema from "../db/schema";
 import { Folders } from "../../shared/folders";
 import type { Env } from "../types";
 import { applyMigrations, mailboxMigrations } from "./migrations";
+import { MailboxEvents } from "../mcp/events-store";
+import { EventError, type EventPrincipal, type EventSubscriptionRequest, type EventUnsubscribeRequest, type EmailReceivedEvent } from "../mcp/events-protocol";
+import { isMailboxActive, isMailboxBlocked, MailboxError } from "../lib/mailbox-access";
 
 /**
  * SQL expression to normalize email subjects by stripping common
@@ -49,7 +52,7 @@ const SORT_COLUMN_MAP = {
 	starred: schema.emails.starred,
 } satisfies Record<SortColumn, typeof schema.emails[keyof typeof schema.emails]>;
 
-interface SearchFilterOptions {
+export interface SearchFilterOptions {
 	query: string;
 	folder?: string;
 	from?: string;
@@ -103,11 +106,45 @@ export class MailboxDO extends DurableObject<Env> {
 	declare __DURABLE_OBJECT_BRAND: never;
 	db: ReturnType<typeof drizzle>;
 
+	private events: MailboxEvents;
+
 	constructor(state: DurableObjectState, env: Env) {
 		super(state, env);
 		this.db = drizzle(this.ctx.storage, { schema });
 		applyMigrations(this.ctx.storage.sql, mailboxMigrations, this.ctx.storage);
+		this.events = new MailboxEvents(this.ctx.storage, env.MCP_EVENTS_CALLBACK_HOSTS, {
+			fetch: (input, init) => fetch(input, init),
+			authorized: async (principal, mailboxId) => {
+				if (principal.expiresAt <= Date.now() || !await isMailboxActive(this.env, mailboxId)) return false;
+				if (principal.local && import.meta.env.DEV) return true;
+				if (!principal.assertion) return false;
+				// Re-enter Access with the signed user assertion before each delivery.
+				// The fixed configured origin prevents client-controlled recheck URLs.
+				const response = await fetch(new URL("/api/v1/config", this.env.MCP_PUBLIC_ORIGIN), {
+					headers: { Cookie: `CF_Authorization=${principal.assertion}`, "User-Agent": "agentic-inbox-mcp-events/1.0" },
+					redirect: "manual", signal: AbortSignal.timeout(10_000),
+				});
+				await response.body?.cancel();
+				if (response.status >= 500 || response.status === 429) throw new Error("Access recheck temporarily unavailable");
+				return response.ok && !!response.headers.get("content-type")?.includes("application/json");
+			},
+		});
 	}
+
+	async subscribeMcpEvent(principal: EventPrincipal, request: EventSubscriptionRequest) {
+		try { return { result: await this.events.subscribe(principal, request), error: null }; }
+		catch (error) {
+			if (error instanceof EventError) return { result: null, error: { code: error.code, message: error.message, data: error.data } };
+			throw error;
+		}
+	}
+
+	async unsubscribeMcpEvent(principal: EventPrincipal, request: EventUnsubscribeRequest) {
+		return this.events.unsubscribe(principal, request);
+	}
+
+	async alarm() { await this.events.alarm(); }
+	async clearMcpEvents() { await this.events.clear(); }
 
 	// ── Email CRUD (Drizzle) ───────────────────────────────────────
 
@@ -689,12 +726,12 @@ export class MailboxDO extends DurableObject<Env> {
 		if (date_end) { const p = addParam(date_end); conditions.push(`${prefix}date <= ${p}`); }
 		if (is_read !== undefined) { const p = addParam(is_read ? 1 : 0); conditions.push(`${prefix}read = ${p}`); }
 		if (is_starred !== undefined) { const p = addParam(is_starred ? 1 : 0); conditions.push(`${prefix}starred = ${p}`); }
-		if (has_attachment) { conditions.push(`${prefix}id IN (SELECT DISTINCT email_id FROM attachments)`); }
+		if (has_attachment !== undefined) { conditions.push(`${prefix}id ${has_attachment ? "IN" : "NOT IN"} (SELECT DISTINCT email_id FROM attachments)`); }
 
 		return { conditions, params };
 	}
 
-	async searchEmails(options: SearchFilterOptions & { page?: number; limit?: number }) {
+	async searchEmails(options: SearchFilterOptions & { page?: number; limit?: number }): Promise<unknown[]> {
 		const { page = 1, limit: rawLimit = 25 } = options;
 		const limit = Math.min(Math.max(rawLimit, 1), 100);
 		const { conditions, params } = this.#buildSearchConditions(options, "e");
@@ -822,6 +859,7 @@ export class MailboxDO extends DurableObject<Env> {
 		folder: string,
 		email: EmailData,
 		attachments: AttachmentData[],
+		incomingEvent?: EmailReceivedEvent,
 	) {
 		// Resolve folder name or ID to the actual folder ID.
 		const folderRow = this.db
@@ -841,32 +879,38 @@ export class MailboxDO extends DurableObject<Env> {
 		const folderId = folderRow.id;
 		const isSent = folderId === Folders.SENT;
 
-		// Sent emails are always read — the sender obviously knows what they wrote.
-		// This prevents sent replies from inflating thread_unread_count.
-		this.db
-			.insert(schema.emails)
-			.values({
-				id: email.id,
-				folder_id: folderId,
-				subject: email.subject,
-				sender: email.sender,
-				recipient: email.recipient,
-				cc: email.cc ?? null,
-				bcc: email.bcc ?? null,
-				date: email.date,
-				read: isSent ? 1 : (email.read ? 1 : 0),
-				starred: email.starred ? 1 : 0,
-				body: email.body,
-				in_reply_to: email.in_reply_to ?? null,
-				email_references: email.email_references ?? null,
-				thread_id: email.thread_id ?? null,
-				message_id: email.message_id ?? null,
-				raw_headers: email.raw_headers ?? null,
-			})
-			.run();
+		if (incomingEvent) await this.events.arm();
+		const owner = incomingEvent?.data.mailboxId ?? (folderId === Folders.DRAFT || folderId === Folders.SENT ? email.sender : undefined);
+		if (owner && await isMailboxBlocked(this.env.BUCKET, owner)) throw new MailboxError("Mailbox not found", 404);
+		this.ctx.storage.transactionSync(() => {
+			// Sent emails are always read — the sender obviously knows what they wrote.
+			// This prevents sent replies from inflating thread_unread_count.
+			this.db
+				.insert(schema.emails)
+				.values({
+					id: email.id,
+					folder_id: folderId,
+					subject: email.subject,
+					sender: email.sender,
+					recipient: email.recipient,
+					cc: email.cc ?? null,
+					bcc: email.bcc ?? null,
+					date: email.date,
+					read: isSent ? 1 : (email.read ? 1 : 0),
+					starred: email.starred ? 1 : 0,
+					body: email.body,
+					in_reply_to: email.in_reply_to ?? null,
+					email_references: email.email_references ?? null,
+					thread_id: email.thread_id ?? null,
+					message_id: email.message_id ?? null,
+					raw_headers: email.raw_headers ?? null,
+				})
+				.run();
 
-		if (attachments.length > 0) {
-			this.db.insert(schema.attachments).values(attachments).run();
-		}
+			if (attachments.length > 0) {
+				this.db.insert(schema.attachments).values(attachments).run();
+			}
+			if (incomingEvent) this.events.enqueue(incomingEvent, email.subject);
+		});
 	}
 }
