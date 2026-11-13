@@ -117,7 +117,13 @@ export function htmlToPlainText(html: string): string {
  * Strip all HTML tags from a string.
  */
 export function stripHtml(html: string): string {
-	return html.replace(/<[^>]*>/g, "").replace(/\s+/g, " ").trim();
+	return html
+		.replace(/<!--[\s\S]*?-->/g, "")
+		.replace(/<(head|style|script|title)\b[\s\S]*?<\/\1>/gi, "")
+		.replace(/<\/?(?:p|div|br|li|tr|h[1-6])\b[^>]*>/gi, " ")
+		.replace(/<[^>]*>/g, "")
+		.replace(/\s+/g, " ")
+		.trim();
 }
 
 function decodeHtmlEntities(text: string): string {
