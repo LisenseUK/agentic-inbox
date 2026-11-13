@@ -162,6 +162,16 @@ export default function EmailPanelToolbar({
 			<MoveToFolderMenu folders={moveToFolders} onMove={onMove} />
 
 			<div className="ml-auto flex items-center gap-0.5">
+				<Tooltip content="Copy thread" side="bottom" asChild>
+					<Button
+						variant="ghost"
+						shape="square"
+						size="sm"
+						icon={<CopyIcon size={18} />}
+						onClick={onCopyThread}
+						aria-label="Copy thread"
+					/>
+				</Tooltip>
 				<Tooltip content="View source" side="bottom" asChild>
 					<Button
 						variant="ghost"
