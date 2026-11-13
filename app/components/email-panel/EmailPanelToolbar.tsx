@@ -10,6 +10,7 @@ import {
 	ArrowLeftIcon,
 	ChatCircleIcon,
 	CodeIcon,
+	CopyIcon,
 	EnvelopeOpenIcon,
 	EnvelopeSimpleIcon,
 	FolderSimpleIcon,
@@ -37,6 +38,7 @@ interface EmailPanelToolbarProps {
 	onToggleStar: () => void;
 	onToggleRead: () => void;
 	onMove: (folderId: string) => void;
+	onCopyThread: () => void;
 	onViewSource: () => void;
 	onDelete: () => void;
 }
@@ -56,6 +58,7 @@ export default function EmailPanelToolbar({
 	onToggleStar,
 	onToggleRead,
 	onMove,
+	onCopyThread,
 	onViewSource,
 	onDelete,
 }: EmailPanelToolbarProps) {

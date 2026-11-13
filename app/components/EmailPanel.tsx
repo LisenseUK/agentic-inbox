@@ -12,6 +12,7 @@ import EmailPanelHeader from "~/components/email-panel/EmailPanelHeader";
 import EmailPanelToolbar from "~/components/email-panel/EmailPanelToolbar";
 import SingleMessageView from "~/components/email-panel/SingleMessageView";
 import ThreadMessage from "~/components/email-panel/ThreadMessage";
+import { formatThreadForClipboard } from "~/lib/thread-text";
 import { splitEmailList, toEmailListValue } from "~/lib/utils";
 import api from "~/services/api";
 import { useDeleteEmail, useEmail, useMoveEmail, useReplyToEmail, useSendEmail, useThreadReplies, useUpdateEmail } from "~/queries/emails";
@@ -139,6 +140,16 @@ export default function EmailPanel({ emailId }: { emailId: string }) {
 		} finally { setIsSending(false); }
 	};
 
+	const handleCopyThread = async () => {
+		const sent = allMessages.filter((msg) => !draftMessageIds.has(msg.id));
+		try {
+			await navigator.clipboard.writeText(formatThreadForClipboard(sent, email.subject));
+			toastManager.add({ title: "Thread copied" });
+		} catch {
+			toastManager.add({ title: "Could not copy thread", variant: "error" });
+		}
+	};
+
 	const hasThread = allMessages.length > 1;
 
 	return (
@@ -173,6 +184,7 @@ export default function EmailPanel({ emailId }: { emailId: string }) {
 					}
 				}}
 				onMove={handleMove}
+				onCopyThread={handleCopyThread}
 				onViewSource={() => setSourceViewEmail(email)}
 				onDelete={handleDelete}
 			/>
