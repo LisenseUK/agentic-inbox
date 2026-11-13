@@ -3,6 +3,7 @@
 //     https://opensource.org/licenses/Apache-2.0
 
 import type { ReactNode } from "react";
+import { useMobileEmailBack } from "~/hooks/useMobileEmailBack";
 import ComposePanel from "~/components/ComposePanel";
 import EmailPanel from "~/components/EmailPanel";
 
@@ -17,6 +18,8 @@ export default function MailboxSplitView({
 	isComposing,
 	children,
 }: MailboxSplitViewProps) {
+	useMobileEmailBack();
+
 	const isPanelOpen = selectedEmailId !== null || isComposing;
 
 	return (

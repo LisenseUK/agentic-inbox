@@ -19,7 +19,7 @@ import {
 } from "@phosphor-icons/react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useParams } from "react-router";
+import { useLocation, useParams } from "react-router";
 import { Folders } from "shared/folders";
 import { formatListDate } from "shared/dates";
 import MailboxSplitView from "~/components/MailboxSplitView";
@@ -142,6 +142,7 @@ function FolderEmptyState({
 }
 
 export default function EmailListRoute() {
+	const location = useLocation();
 	const { mailboxId, folder } = useParams<{
 		mailboxId: string;
 		folder: string;
@@ -196,10 +197,11 @@ export default function EmailListRoute() {
 		prevFolderRef.current = `${mailboxId}/${folder}`;
 
 		if (folderChanged) {
-			closePanel();
+			// A restored mobile history entry already identifies the open email.
+			if (!location.state?.mobileEmail) closePanel();
 			setPage(1);
 		}
-	}, [mailboxId, folder, closePanel]);
+	}, [mailboxId, folder, closePanel, location.state]);
 
 	const toggleStar = (e: React.MouseEvent, email: Email) => {
 		e.preventDefault();
